@@ -52,31 +52,6 @@
 
       <main class="layout" id="top">
         <aside class="sidebar">
-          <section class="panel panel--hero">
-            <p class="panel__eyebrow">For You pessoal</p>
-            <h1>Seu following feed, só que reorganizado pelo que realmente está rendendo.</h1>
-            <p class="panel__copy">
-              Este app busca sua timeline do Bluesky, calcula um score para cada post
-              recente e te devolve uma versão mais afiada do feed. Menos ruído. Mais
-              coisa boa. Mais vibe de discover tab.
-            </p>
-
-            <div class="hero-stats">
-              <article>
-                <strong data-stat="scanned">0</strong>
-                <span>posts lidos</span>
-              </article>
-              <article>
-                <strong data-stat="personal">0</strong>
-                <span>tops do seu feed</span>
-              </article>
-              <article>
-                <strong data-stat="global">0</strong>
-                <span>hot posts globais</span>
-              </article>
-            </div>
-          </section>
-
           <section class="panel login-panel" id="login-card">
             <div class="panel__header">
               <div>
@@ -160,6 +135,8 @@
               <label>
                 Janela de tempo
                 <select name="windowHours">
+                  <option value="0.5">30 minutos</option>
+                  <option value="2">2 horas</option>
                   <option value="6">6 horas</option>
                   <option value="12">12 horas</option>
                   <option value="24">24 horas</option>
@@ -185,52 +162,41 @@
 
             <div class="score-explainer">
               <p>
-                <strong>Balanced</strong> mistura likes, reposts, quotes, replies, bookmarks
-                e recência.
+                <strong>Balanced</strong> prioriza quem acelerou agora, mas ainda respeita volume.
               </p>
               <p>
-                <strong>Viral</strong> favorece posts que já explodiram.
+                <strong>Viral</strong> sobe os grandes posts mesmo quando já estão um pouco mais velhos.
               </p>
               <p>
-                <strong>Rising</strong> tenta puxar o que está subindo agora.
+                <strong>Rising</strong> caça o que está pegando fogo nos últimos 30 minutos.
               </p>
             </div>
+          </section>
+
+          <section class="panel panel--hero">
+            <p class="panel__eyebrow">Como ele pensa</p>
+            <h1>Primeiro vem o que está engajando agora. Depois entra o resto.</h1>
+            <p class="panel__copy">
+              O ranking agora puxa a velocidade de likes, reposts, quotes e replies da última
+              meia hora para você abrir a página e já ver o que está sendo falado.
+            </p>
           </section>
         </aside>
 
         <section class="feed-column feed-column--personal">
-          <section class="column-header">
-            <div>
-              <p class="panel__eyebrow">Seu For You</p>
-              <h2>Mais populares de quem você segue</h2>
-            </div>
+          <section class="feed-toolbar">
             <button class="ghost-button" type="button" data-action="refresh-personal">
               Atualizar
             </button>
           </section>
 
-          <section class="summary-grid">
-            <article class="mini-stat">
-              <span>janela</span>
-              <strong data-summary-window>24h</strong>
-            </article>
-            <article class="mini-stat">
-              <span>média de score</span>
-              <strong data-summary-score>0</strong>
-            </article>
-            <article class="mini-stat">
-              <span>likes no topo</span>
-              <strong data-summary-likes>0</strong>
-            </article>
-          </section>
-
           <section class="stack" data-personal-feed>
             <article class="empty-state">
               <p class="empty-state__eyebrow">Conecte sua conta</p>
-              <h3>Assim que você entrar, eu reorganizo sua timeline por relevância recente.</h3>
+              <h3>Assim que você entrar, eu puxo primeiro os posts quentes da última meia hora.</h3>
               <p>
-                O app busca as páginas mais novas do seu feed de seguindo, calcula um score e
-                sobe os posts mais fortes.
+                O app busca o seu following feed, mede a velocidade do engajamento recente e
+                coloca os posts mais atuais na frente.
               </p>
             </article>
           </section>
@@ -283,7 +249,6 @@
         </div>
 
         <a class="post-card__link" data-post-link target="_blank" rel="noreferrer">
-          <h3 data-title></h3>
           <p data-text></p>
         </a>
 

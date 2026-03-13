@@ -5,6 +5,9 @@ const STORAGE_KEY = "bsky-for-you-preferences";
 const TIMELINE_PAGE_LIMIT = 100;
 const TIMELINE_MAX_PAGES = 3;
 const GLOBAL_FETCH_LIMIT = 30;
+const RECENT_HOT_WINDOW_MINUTES = 30;
+const RECENT_HOT_MIN_ENGAGEMENT = 10;
+const RECENT_HOT_MIN_VELOCITY = 0.7;
 
 const state = {
   session: null,
@@ -25,12 +28,6 @@ const elements = {
   profileAvatar: document.querySelector("[data-profile-avatar]"),
   profileName: document.querySelector("[data-profile-name]"),
   profileHandle: document.querySelector("[data-profile-handle]"),
-  summaryWindow: document.querySelector("[data-summary-window]"),
-  summaryScore: document.querySelector("[data-summary-score]"),
-  summaryLikes: document.querySelector("[data-summary-likes]"),
-  scannedStat: document.querySelector('[data-stat="scanned"]'),
-  personalStat: document.querySelector('[data-stat="personal"]'),
-  globalStat: document.querySelector('[data-stat="global"]'),
   template: document.querySelector("#post-card-template"),
 };
 
@@ -168,8 +165,6 @@ function handleControlsChange() {
 
   if (state.rawTimeline.length > 0) {
     rerankPersonalFeed();
-  } else {
-    updatePersonalSummary([]);
   }
 
   if (state.globalFeed.length > 0) {
@@ -207,7 +202,7 @@ async function loadProfile() {
 
 async function refreshPersonalFeed() {
   if (!state.session) {
-    renderPersonalFeed([], "Conecte sua conta para montar o seu For You pessoal.");
+    renderPersonalFeed([], "Conecte sua conta para montar o ranking quente do seu following.");
     return;
   }
 
@@ -296,61 +291,67 @@ function rankPersonalFeed(feedItems, preferences) {
       .filter((item) => preferences.includeReposts || !isRepost(item))
   );
 
-  const cutoff = Date.now() - preferences.windowHours * 60 * 60 * 1000;
-  const recent = normalized.filter((item) => new Date(item.indexedAt).getTime() >= cutoff);
-  const pool = recent.length >= Math.min(6, preferences.postLimit) ? recent : normalized;
-
-  return pool
-    .map((item, index) => {
-      const score = scorePost(item, preferences);
-      return {
-        ...item,
-        rank: index + 1,
-        score,
-      };
-    })
-    .sort((left, right) => right.score - left.score)
-    .map((item, index) => ({
+  const recentWindowMinutes = Math.max(preferences.windowHours * 60, 120);
+  const hotNow = normalized
+    .filter(isHotNowCandidate)
+    .map((item) => ({
       ...item,
-      rank: index + 1,
-    }));
+      score: scorePost(item, preferences),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  const hotUris = new Set(hotNow.map((item) => item.uri));
+
+  const recentMomentum = normalized
+    .filter(
+      (item) => !hotUris.has(item.uri) && getAgeMinutes(item) <= recentWindowMinutes
+    )
+    .map((item) => ({
+      ...item,
+      score: scorePost(item, preferences),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  const recentUris = new Set(recentMomentum.map((item) => item.uri));
+
+  const fallback = normalized
+    .filter((item) => !hotUris.has(item.uri) && !recentUris.has(item.uri))
+    .map((item) => ({
+      ...item,
+      score: scorePost(item, preferences),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  return [...hotNow, ...recentMomentum, ...fallback].map((item, index) => ({
+    ...item,
+    rank: index + 1,
+  }));
 }
 
 function scorePost(item, preferences) {
-  const likes = item.likeCount;
-  const reposts = item.repostCount;
-  const quotes = item.quoteCount;
-  const replies = item.replyCount;
-  const bookmarks = item.bookmarkCount;
-  const ageHours = Math.max(0.25, (Date.now() - new Date(item.indexedAt).getTime()) / 36e5);
-  const mediaBonus = hasRichEmbed(item.embed) ? 14 : 0;
+  const engagement = getEngagementUnits(item);
+  const ageMinutes = getAgeMinutes(item);
+  const velocity = getVelocity(item);
+  const mediaBonus = hasRichEmbed(item.embed) ? 10 : 0;
+  const freshnessBoost = Math.max(0, RECENT_HOT_WINDOW_MINUTES - ageMinutes) * 4.6;
+  const basePenalty = penaltyMultiplier(item);
 
   if (preferences.mode === "viral") {
     return roundScore(
-      (likes * 0.9 + reposts * 3.2 + quotes * 3.8 + replies * 1.0 + bookmarks * 2.7 + mediaBonus) /
-        Math.pow(ageHours + 1, 0.38) *
-        penaltyMultiplier(item)
+      (engagement * 1.28 + velocity * 88 + freshnessBoost * 0.45 + mediaBonus) *
+        basePenalty
     );
   }
 
   if (preferences.mode === "rising") {
     return roundScore(
-      (Math.log1p(likes + reposts * 3 + quotes * 4 + replies * 2 + bookmarks * 2 + mediaBonus * 3) *
-        145) /
-        Math.pow(ageHours + 1.15, 1.14) *
-        penaltyMultiplier(item)
+      (engagement * 0.82 + velocity * 176 + freshnessBoost * 1.6 + mediaBonus) *
+        basePenalty
     );
   }
 
   return roundScore(
-    (likes * 1.05 +
-      reposts * 2.6 +
-      quotes * 3.2 +
-      replies * 1.35 +
-      bookmarks * 2.4 +
-      mediaBonus) /
-      Math.pow(ageHours + 1, 0.55) *
-      penaltyMultiplier(item)
+    (engagement + velocity * 128 + freshnessBoost + mediaBonus) * basePenalty
   );
 }
 
@@ -372,11 +373,10 @@ function renderPersonalFeed(entries, message) {
   if (!entries.length) {
     renderEmptyState(
       elements.personalFeed,
-      "Seu feed filtrado vai aparecer aqui",
+      "Seu feed quente vai aparecer aqui",
       message ||
-        "Entre com sua conta e eu monto uma timeline pessoal baseada em engajamento recente."
+        "Entre com sua conta e eu monto uma timeline pessoal puxando primeiro o que disparou agora."
     );
-    updatePersonalSummary([]);
     updateDashboardStats();
     return;
   }
@@ -421,7 +421,6 @@ function buildPostCard(entry) {
   const handle = node.querySelector("[data-handle]");
   const badge = node.querySelector("[data-badge]");
   const time = node.querySelector("[data-time]");
-  const title = node.querySelector("[data-title]");
   const text = node.querySelector("[data-text]");
   const link = node.querySelector("[data-post-link]");
   const likes = node.querySelector("[data-likes]");
@@ -437,7 +436,6 @@ function buildPostCard(entry) {
   handle.textContent = `@${entry.authorHandle}`;
   time.textContent = formatRelativeTime(entry.indexedAt);
   time.dateTime = entry.indexedAt;
-  title.textContent = entry.title;
   text.textContent = entry.text || "Abrir post no Bluesky";
   link.href = entry.postUrl;
 
@@ -467,8 +465,8 @@ function getBadgeLabel(entry) {
     return "what's hot";
   }
 
-  if (entry.rank <= 3) {
-    return `top ${entry.rank}`;
+  if (getAgeMinutes(entry) <= RECENT_HOT_WINDOW_MINUTES) {
+    return "agora";
   }
 
   if (isRepost(entry)) {
@@ -599,6 +597,10 @@ function updateProfileChip() {
 }
 
 function updatePersonalSummary(entries) {
+  if (!elements.summaryWindow || !elements.summaryScore || !elements.summaryLikes) {
+    return;
+  }
+
   elements.summaryWindow.textContent = `${state.preferences.windowHours}h`;
 
   if (!entries.length) {
@@ -616,11 +618,19 @@ function updatePersonalSummary(entries) {
 }
 
 function updateDashboardStats() {
-  elements.scannedStat.textContent = String(state.rawTimeline.length || 0);
-  elements.personalStat.textContent = String(state.personalFeed.length || 0);
-  elements.globalStat.textContent = String(
-    Math.min(state.globalFeed.length || 0, state.preferences.postLimit)
-  );
+  if (elements.scannedStat) {
+    elements.scannedStat.textContent = String(state.rawTimeline.length || 0);
+  }
+
+  if (elements.personalStat) {
+    elements.personalStat.textContent = String(state.personalFeed.length || 0);
+  }
+
+  if (elements.globalStat) {
+    elements.globalStat.textContent = String(
+      Math.min(state.globalFeed.length || 0, state.preferences.postLimit)
+    );
+  }
 }
 
 function updateSessionState(kind, label) {
@@ -671,7 +681,6 @@ function normalizeFeedItem(item, source, rank = 0) {
     authorHandle: post.author?.handle || "desconhecido",
     avatar: post.author?.avatar || "",
     text,
-    title: buildTitle(text),
     indexedAt: post.indexedAt || post.record?.createdAt || new Date().toISOString(),
     likeCount: Number(post.likeCount || 0),
     repostCount: Number(post.repostCount || 0),
@@ -698,19 +707,6 @@ function normalizeFeedItem(item, source, rank = 0) {
   };
 }
 
-function buildTitle(text) {
-  if (!text) {
-    return "Abrir post no Bluesky";
-  }
-
-  const [firstLine] = text.split("\n");
-  if (firstLine.length <= 72) {
-    return firstLine;
-  }
-
-  return `${firstLine.slice(0, 69).trim()}...`;
-}
-
 function buildPostUrl(uri, did) {
   const rkey = uri?.split("/").pop();
   if (!did || !rkey) {
@@ -726,6 +722,32 @@ function isRepost(item) {
 
 function hasRichEmbed(embed) {
   return Boolean(summarizeEmbed(embed));
+}
+
+function getAgeMinutes(item) {
+  return Math.max(1, (Date.now() - new Date(item.indexedAt).getTime()) / 60000);
+}
+
+function getEngagementUnits(item) {
+  return (
+    item.likeCount +
+    item.repostCount * 4 +
+    item.quoteCount * 5 +
+    item.replyCount * 1.6 +
+    item.bookmarkCount * 3
+  );
+}
+
+function getVelocity(item) {
+  return getEngagementUnits(item) / Math.max(getAgeMinutes(item), 3);
+}
+
+function isHotNowCandidate(item) {
+  return (
+    getAgeMinutes(item) <= RECENT_HOT_WINDOW_MINUTES &&
+    getEngagementUnits(item) >= RECENT_HOT_MIN_ENGAGEMENT &&
+    getVelocity(item) >= RECENT_HOT_MIN_VELOCITY
+  );
 }
 
 function dedupeByUri(items) {
@@ -841,9 +863,10 @@ async function apiFetch(baseUrl, nsid, options = {}) {
 function loadPreferences() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const isLegacyPreferences = !parsed.rankingVersion;
     return {
-      mode: parsed.mode || "balanced",
-      windowHours: Number(parsed.windowHours || 24),
+      mode: isLegacyPreferences ? "rising" : parsed.mode || "rising",
+      windowHours: isLegacyPreferences ? 0.5 : Number(parsed.windowHours || 0.5),
       postLimit: Number(parsed.postLimit || 15),
       includeReposts: parsed.includeReposts ?? true,
       identifier: parsed.identifier || "",
@@ -851,8 +874,8 @@ function loadPreferences() {
     };
   } catch {
     return {
-      mode: "balanced",
-      windowHours: 24,
+      mode: "rising",
+      windowHours: 0.5,
       postLimit: 15,
       includeReposts: true,
       identifier: "",
@@ -862,7 +885,13 @@ function loadPreferences() {
 }
 
 function savePreferences() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.preferences));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      ...state.preferences,
+      rankingVersion: 2,
+    })
+  );
 }
 
 function escapeHtml(value) {

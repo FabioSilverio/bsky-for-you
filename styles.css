@@ -253,7 +253,8 @@ code {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 400px) minmax(280px, 340px);
+  grid-template-areas: "personal global sidebar";
   gap: 20px;
   align-items: start;
 }
@@ -262,6 +263,18 @@ code {
 .feed-column {
   display: grid;
   gap: 18px;
+}
+
+.sidebar {
+  grid-area: sidebar;
+}
+
+.feed-column--personal {
+  grid-area: personal;
+}
+
+.feed-column--global {
+  grid-area: global;
 }
 
 .panel,
@@ -295,7 +308,7 @@ code {
 }
 
 .panel--hero {
-  min-height: 320px;
+  min-height: 240px;
   border-radius: var(--radius-xl);
   background:
     radial-gradient(circle at top right, rgba(73, 167, 255, 0.16), transparent 28%),
@@ -332,31 +345,17 @@ code {
   max-width: 36ch;
 }
 
-.hero-stats,
+.feed-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.mini-stat,
 .summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 22px;
+  display: none;
 }
 
-.hero-stats article,
-.mini-stat {
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(171, 219, 255, 0.1);
-}
-
-.hero-stats strong,
-.mini-stat strong {
-  display: block;
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 1.4rem;
-}
-
-.hero-stats span,
-.mini-stat span,
 .profile-chip span,
 .author-block span,
 .engagement-row span,
@@ -531,19 +530,11 @@ code {
   margin-top: 16px;
 }
 
-.post-card__link:hover h3 {
-  color: var(--cyan);
-}
-
-.post-card h3 {
-  font-size: 1.1rem;
-  line-height: 1.1;
-}
-
 .post-card p {
   margin: 0;
   color: var(--text-soft);
-  line-height: 1.68;
+  font-size: 1.28rem;
+  line-height: 1.64;
   white-space: pre-wrap;
 }
 
@@ -651,11 +642,10 @@ code {
 
 @media (max-width: 1180px) {
   .layout {
-    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  }
-
-  .feed-column--global {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+    grid-template-areas:
+      "personal sidebar"
+      "global sidebar";
   }
 }
 
@@ -689,10 +679,12 @@ code {
     display: grid;
   }
 
-  .layout,
-  .hero-stats,
-  .summary-grid {
+  .layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "personal"
+      "global"
+      "sidebar";
   }
 
   .column-header {
