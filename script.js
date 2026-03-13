@@ -3,25 +3,40 @@ const HOT_FEED_URI =
 const PUBLIC_API = "https://public.api.bsky.app";
 const STORAGE_KEY = "bsky-for-you-preferences";
 const TIMELINE_PAGE_LIMIT = 100;
-const TIMELINE_MAX_PAGES = 3;
+const TIMELINE_MAX_PAGES = 5;
 const GLOBAL_FETCH_LIMIT = 30;
 const RECENT_HOT_WINDOW_MINUTES = 30;
-const RECENT_HOT_MIN_ENGAGEMENT = 10;
-const RECENT_HOT_MIN_VELOCITY = 0.7;
+const BASE_MIN_ENGAGEMENT = 10;
+const BASE_MIN_VELOCITY = 0.7;
+const WINDOW_SEQUENCE = [0.5, 1, 1.5, 2, 3, 4, 6, 12, 24];
+const MAX_COMPOSER_IMAGES = 4;
 
 const state = {
   session: null,
   profile: null,
   rawTimeline: [],
+  personalRanked: [],
   personalFeed: [],
   globalFeed: [],
   preferences: loadPreferences(),
+  composeImages: [],
+  personalRelaxLevel: 0,
+  personalWindowHours: 0.5,
+  personalRenderCount: 0,
+  isLoadingMorePersonal: false,
 };
 
 const elements = {
   loginForm: document.querySelector("[data-login-form]"),
   controlsForm: document.querySelector("[data-controls-form]"),
+  composeForm: document.querySelector("[data-compose-form]"),
+  composeText: document.querySelector("[data-compose-text]"),
+  composeImageInput: document.querySelector("[data-compose-images]"),
+  composePreviews: document.querySelector("[data-compose-previews]"),
+  composeStatus: document.querySelector("[data-compose-status]"),
   personalFeed: document.querySelector("[data-personal-feed]"),
+  personalLoader: document.querySelector("[data-personal-loader]"),
+  personalSentinel: document.querySelector("[data-personal-sentinel]"),
   globalFeed: document.querySelector("[data-global-feed]"),
   sessionState: document.querySelector("[data-session-state]"),
   profileChip: document.querySelector("[data-profile-chip]"),
@@ -31,21 +46,30 @@ const elements = {
   template: document.querySelector("#post-card-template"),
 };
 
+let personalObserver = null;
+
 bootstrap();
 
 function bootstrap() {
+  state.personalWindowHours = Math.max(Number(state.preferences.windowHours || 0.5), 0.5);
+  state.personalRenderCount = state.preferences.postLimit;
   hydrateForms();
   bindEvents();
+  setupInfiniteScroll();
   renderPersonalFeed([]);
   renderLoading(elements.globalFeed, 3);
   updateSessionState("offline", "offline");
-  updateDashboardStats();
+  updateComposerState();
   refreshGlobalFeed();
 }
 
 function bindEvents() {
   elements.loginForm?.addEventListener("submit", handleLoginSubmit);
   elements.controlsForm?.addEventListener("change", handleControlsChange);
+  elements.composeForm?.addEventListener("submit", handleComposeSubmit);
+  elements.composeImageInput?.addEventListener("change", handleComposeImagesSelected);
+  elements.composePreviews?.addEventListener("input", handleComposePreviewInput);
+  elements.composePreviews?.addEventListener("click", handleComposePreviewClick);
 
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -54,7 +78,7 @@ function bindEvents() {
       if (action === "refresh-all") {
         await Promise.all([
           refreshGlobalFeed(),
-          state.session ? refreshPersonalFeed() : Promise.resolve(),
+          state.session ? refreshPersonalFeed({ manual: true }) : Promise.resolve(),
         ]);
       }
 
@@ -63,7 +87,7 @@ function bindEvents() {
       }
 
       if (action === "refresh-personal") {
-        await refreshPersonalFeed();
+        await refreshPersonalFeed({ manual: true });
       }
 
       if (action === "logout") {
@@ -78,6 +102,28 @@ function bindEvents() {
   [identifierInput, serviceInput].forEach((input) => {
     input?.addEventListener("change", persistIdentityPreferences);
   });
+}
+
+function setupInfiniteScroll() {
+  if (!elements.personalSentinel || !("IntersectionObserver" in window)) {
+    return;
+  }
+
+  personalObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          loadMorePersonalFeed();
+        }
+      });
+    },
+    {
+      rootMargin: "0px 0px 220px 0px",
+      threshold: 0.01,
+    }
+  );
+
+  personalObserver.observe(elements.personalSentinel);
 }
 
 function hydrateForms() {
@@ -134,14 +180,17 @@ async function handleLoginSubmit(event) {
 
     persistIdentityPreferences();
     elements.loginForm.elements.namedItem("password").value = "";
+    resetPersonalWindowing();
     await loadProfile();
     updateSessionState("online", "online");
-    await refreshPersonalFeed();
+    updateComposerState();
+    await Promise.all([refreshPersonalFeed(), refreshGlobalFeed()]);
   } catch (error) {
     console.error(error);
     state.session = null;
     state.profile = null;
     updateProfileChip();
+    updateComposerState();
     updateSessionState("error", "erro no login");
     renderPersonalFeed([], "Não consegui entrar com essa conta. Confira o handle e a app password.");
   }
@@ -162,6 +211,7 @@ function handleControlsChange() {
   };
 
   savePreferences();
+  resetPersonalWindowing();
 
   if (state.rawTimeline.length > 0) {
     rerankPersonalFeed();
@@ -200,10 +250,250 @@ async function loadProfile() {
   updateProfileChip();
 }
 
-async function refreshPersonalFeed() {
+function resetPersonalWindowing() {
+  state.personalRelaxLevel = 0;
+  state.personalWindowHours = Math.max(Number(state.preferences.windowHours || 0.5), 0.5);
+  state.personalRenderCount = state.preferences.postLimit;
+}
+
+async function handleComposeSubmit(event) {
+  event.preventDefault();
+
+  if (!state.session) {
+    setComposeStatus("Entre na sua conta para postar.", true);
+    return;
+  }
+
+  const text = String(elements.composeText?.value || "").trim();
+  if (!text && state.composeImages.length === 0) {
+    setComposeStatus("Escreva algo ou escolha pelo menos uma imagem.", true);
+    return;
+  }
+
+  setComposeStatus("Postando...", false);
+  setComposerBusy(true);
+
+  try {
+    let embed;
+
+    if (state.composeImages.length > 0) {
+      const images = [];
+
+      for (const imageItem of state.composeImages) {
+        const uploaded = await uploadImage(imageItem.file);
+        images.push({
+          alt: imageItem.alt.trim(),
+          image: uploaded.blob,
+          aspectRatio: {
+            width: imageItem.width,
+            height: imageItem.height,
+          },
+        });
+      }
+
+      embed = {
+        $type: "app.bsky.embed.images",
+        images,
+      };
+    }
+
+    const record = {
+      $type: "app.bsky.feed.post",
+      text,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (embed) {
+      record.embed = embed;
+    }
+
+    const created = await apiFetch(state.session.service, "com.atproto.repo.createRecord", {
+      method: "POST",
+      token: state.session.accessJwt,
+      body: {
+        repo: state.session.did,
+        collection: "app.bsky.feed.post",
+        record,
+      },
+    });
+
+    clearComposeState();
+    await refreshPersonalFeed();
+    setComposeStatus(`Post publicado: ${buildPostUrl(created.uri, state.session.did)}`, false);
+  } catch (error) {
+    console.error(error);
+    setComposeStatus("NÃ£o consegui publicar agora. Tente novamente.", true);
+  } finally {
+    setComposerBusy(false);
+  }
+}
+
+function handleComposeImagesSelected(event) {
+  const files = Array.from(event.target.files || []);
+  const remainingSlots = MAX_COMPOSER_IMAGES - state.composeImages.length;
+
+  files.slice(0, remainingSlots).forEach((file) => {
+    enqueueComposeImage(file).catch((error) => {
+      console.error(error);
+      setComposeStatus("Alguma imagem falhou ao carregar. Tente outra.", true);
+    });
+  });
+
+  event.target.value = "";
+}
+
+async function enqueueComposeImage(file) {
+  const dimensions = await readImageDimensions(file);
+  state.composeImages.push({
+    id: crypto.randomUUID(),
+    file,
+    previewUrl: URL.createObjectURL(file),
+    alt: "",
+    width: dimensions.width,
+    height: dimensions.height,
+  });
+
+  renderComposePreviews();
+}
+
+function handleComposePreviewInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.dataset.role !== "compose-alt") {
+    return;
+  }
+
+  const image = state.composeImages.find((item) => item.id === target.dataset.id);
+  if (image) {
+    image.alt = target.value;
+  }
+}
+
+function handleComposePreviewClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement) || target.dataset.role !== "compose-remove") {
+    return;
+  }
+
+  removeComposeImage(target.dataset.id);
+}
+
+function removeComposeImage(imageId) {
+  const imageIndex = state.composeImages.findIndex((item) => item.id === imageId);
+  if (imageIndex === -1) {
+    return;
+  }
+
+  URL.revokeObjectURL(state.composeImages[imageIndex].previewUrl);
+  state.composeImages.splice(imageIndex, 1);
+  renderComposePreviews();
+}
+
+function renderComposePreviews() {
+  if (!elements.composePreviews) {
+    return;
+  }
+
+  if (state.composeImages.length === 0) {
+    elements.composePreviews.hidden = true;
+    elements.composePreviews.replaceChildren();
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  state.composeImages.forEach((image) => {
+    const node = document.createElement("article");
+    node.className = "compose-preview";
+    node.innerHTML = `
+      <img src="${image.previewUrl}" alt="" />
+      <div class="compose-preview__meta">
+        <input
+          type="text"
+          data-role="compose-alt"
+          data-id="${image.id}"
+          value="${escapeAttribute(image.alt)}"
+          placeholder="DescriÃ§Ã£o da imagem (alt)"
+        />
+        <button class="ghost-button compose-remove" type="button" data-role="compose-remove" data-id="${image.id}">
+          Remover
+        </button>
+      </div>
+    `;
+    fragment.appendChild(node);
+  });
+
+  elements.composePreviews.hidden = false;
+  elements.composePreviews.replaceChildren(fragment);
+}
+
+function clearComposeState() {
+  state.composeImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+  state.composeImages = [];
+
+  if (elements.composeForm) {
+    elements.composeForm.reset();
+  }
+
+  renderComposePreviews();
+}
+
+function setComposeStatus(message, isError) {
+  if (!elements.composeStatus) {
+    return;
+  }
+
+  elements.composeStatus.textContent = message;
+  elements.composeStatus.dataset.error = isError ? "true" : "false";
+}
+
+function setComposerBusy(isBusy) {
+  if (!elements.composeForm) {
+    return;
+  }
+
+  Array.from(elements.composeForm.elements).forEach((element) => {
+    element.disabled = isBusy;
+  });
+}
+
+function updateComposerState() {
+  if (!elements.composeForm) {
+    return;
+  }
+
+  const isOnline = Boolean(state.session);
+  Array.from(elements.composeForm.elements).forEach((element) => {
+    element.disabled = !isOnline;
+  });
+
+  setComposeStatus(
+    isOnline ? "Poste texto, imagem ou os dois." : "Entre no Bluesky para publicar pela pÃ¡gina.",
+    false
+  );
+}
+
+async function uploadImage(file) {
+  if (file.size > 1000000) {
+    throw new Error("Image too large");
+  }
+
+  return apiFetch(state.session.service, "com.atproto.repo.uploadBlob", {
+    method: "POST",
+    token: state.session.accessJwt,
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    rawBody: file,
+  });
+}
+
+async function refreshPersonalFeed(options = {}) {
   if (!state.session) {
     renderPersonalFeed([], "Conecte sua conta para montar o ranking quente do seu following.");
     return;
+  }
+
+  if (options.manual) {
+    state.personalRelaxLevel = Math.min(state.personalRelaxLevel + 1, 8);
   }
 
   updateSessionState("busy", "sincronizando");
@@ -221,30 +511,36 @@ async function refreshPersonalFeed() {
 }
 
 function rerankPersonalFeed() {
-  const ranked = rankPersonalFeed(state.rawTimeline, state.preferences);
-  state.personalFeed = ranked.slice(0, state.preferences.postLimit);
+  state.personalRanked = rankPersonalFeed(state.rawTimeline, state.preferences, {
+    relaxLevel: state.personalRelaxLevel,
+    windowHours: state.personalWindowHours,
+  });
+  state.personalFeed = state.personalRanked.slice(0, state.personalRenderCount);
   renderPersonalFeed(state.personalFeed);
-  updatePersonalSummary(state.personalFeed);
-  updateDashboardStats();
+  updatePersonalLoader();
 }
 
 async function refreshGlobalFeed() {
   renderLoading(elements.globalFeed, 3);
 
   try {
-    const data = await apiFetch(PUBLIC_API, "app.bsky.feed.getFeed", {
-      params: {
-        feed: HOT_FEED_URI,
-        limit: GLOBAL_FETCH_LIMIT,
-      },
-    });
+    const data = await apiFetch(
+      state.session ? state.session.service : PUBLIC_API,
+      "app.bsky.feed.getFeed",
+      {
+        token: state.session ? state.session.accessJwt : undefined,
+        params: {
+          feed: HOT_FEED_URI,
+          limit: GLOBAL_FETCH_LIMIT,
+        },
+      }
+    );
 
     state.globalFeed = (data.feed || []).map((item, index) =>
       normalizeFeedItem(item, "global", index + 1)
     );
 
     renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
-    updateDashboardStats();
   } catch (error) {
     console.error(error);
     renderEmptyState(
@@ -252,6 +548,49 @@ async function refreshGlobalFeed() {
       "Sem hot posts agora",
       "A consulta ao feed global falhou. Recarregue para tentar outra vez."
     );
+  }
+}
+
+function updatePersonalLoader() {
+  if (!elements.personalLoader) {
+    return;
+  }
+
+  const nextWindow = getNextWindowHours(state.personalWindowHours);
+  const hasHiddenEntries = state.personalRanked.length > state.personalFeed.length;
+  const hasMoreWindows = nextWindow > state.personalWindowHours;
+
+  elements.personalLoader.hidden = !state.session || (!hasHiddenEntries && !hasMoreWindows);
+
+  if (!elements.personalLoader.hidden) {
+    elements.personalLoader.textContent = hasMoreWindows
+      ? `Rolando atÃ© o fim, eu amplio a busca para ${formatWindowLabel(nextWindow)} atrÃ¡s.`
+      : "Rolando atÃ© o fim, eu mostro mais posts recentes.";
+  }
+}
+
+async function loadMorePersonalFeed() {
+  if (
+    !state.session ||
+    state.isLoadingMorePersonal ||
+    state.personalRanked.length === 0 ||
+    elements.personalLoader?.hidden
+  ) {
+    return;
+  }
+
+  state.isLoadingMorePersonal = true;
+
+  try {
+    const nextWindow = getNextWindowHours(state.personalWindowHours);
+    if (nextWindow > state.personalWindowHours) {
+      state.personalWindowHours = nextWindow;
+    }
+
+    state.personalRenderCount += state.preferences.postLimit;
+    rerankPersonalFeed();
+  } finally {
+    state.isLoadingMorePersonal = false;
   }
 }
 
@@ -284,21 +623,22 @@ async function fetchTimelinePages() {
   return items;
 }
 
-function rankPersonalFeed(feedItems, preferences) {
+function rankPersonalFeed(feedItems, preferences, options) {
   const normalized = dedupeByUri(
     feedItems
       .map((item) => normalizeFeedItem(item, "personal"))
       .filter((item) => preferences.includeReposts || !isRepost(item))
   );
 
-  const recentWindowMinutes = Math.max(preferences.windowHours * 60, 120);
+  const thresholds = getCurrentHotThresholds(options.relaxLevel);
+  const recentWindowMinutes = Math.max(options.windowHours * 60, 30);
   const hotNow = normalized
-    .filter(isHotNowCandidate)
+    .filter((item) => isHotNowCandidate(item, thresholds))
     .map((item) => ({
       ...item,
       score: scorePost(item, preferences),
     }))
-    .sort((left, right) => right.score - left.score);
+    .sort(compareHotNow);
 
   const hotUris = new Set(hotNow.map((item) => item.uri));
 
@@ -310,7 +650,7 @@ function rankPersonalFeed(feedItems, preferences) {
       ...item,
       score: scorePost(item, preferences),
     }))
-    .sort((left, right) => right.score - left.score);
+    .sort(compareRecentMomentum);
 
   const recentUris = new Set(recentMomentum.map((item) => item.uri));
 
@@ -355,6 +695,31 @@ function scorePost(item, preferences) {
   );
 }
 
+function compareHotNow(left, right) {
+  const ageDiff = getAgeMinutes(left) - getAgeMinutes(right);
+  if (Math.abs(ageDiff) > 3) {
+    return ageDiff;
+  }
+
+  return right.score - left.score;
+}
+
+function compareRecentMomentum(left, right) {
+  const ageDiff = getAgeMinutes(left) - getAgeMinutes(right);
+  if (Math.abs(ageDiff) > 10) {
+    return ageDiff;
+  }
+
+  return right.score - left.score;
+}
+
+function getCurrentHotThresholds(relaxLevel) {
+  return {
+    minEngagement: Math.max(4, BASE_MIN_ENGAGEMENT - relaxLevel * 1.5),
+    minVelocity: Math.max(0.18, BASE_MIN_VELOCITY - relaxLevel * 0.08),
+  };
+}
+
 function penaltyMultiplier(item) {
   let multiplier = 1;
 
@@ -377,7 +742,7 @@ function renderPersonalFeed(entries, message) {
       message ||
         "Entre com sua conta e eu monto uma timeline pessoal puxando primeiro o que disparou agora."
     );
-    updateDashboardStats();
+    updatePersonalLoader();
     return;
   }
 
@@ -387,6 +752,7 @@ function renderPersonalFeed(entries, message) {
   });
 
   elements.personalFeed.replaceChildren(fragment);
+  updatePersonalLoader();
 }
 
 function renderGlobalFeed(entries) {
@@ -428,6 +794,7 @@ function buildPostCard(entry) {
   const replies = node.querySelector("[data-replies]");
   const quotes = node.querySelector("[data-quotes]");
   const score = node.querySelector("[data-score]");
+  const likeButton = node.querySelector("[data-like-button]");
   const embed = node.querySelector("[data-embed]");
 
   avatar.src = entry.avatar || makeAvatarFallback(entry.authorName);
@@ -451,6 +818,8 @@ function buildPostCard(entry) {
     badge.textContent = badgeLabel;
   }
 
+  configureLikeButton(likeButton, entry);
+
   const embedNodes = buildEmbedNodes(entry.embed);
   if (embedNodes.length > 0) {
     embed.hidden = false;
@@ -458,6 +827,119 @@ function buildPostCard(entry) {
   }
 
   return node;
+}
+
+function configureLikeButton(button, entry) {
+  if (!button) {
+    return;
+  }
+
+  const liked = Boolean(entry.viewerLikeUri);
+  button.textContent = liked ? "Curtido" : "Curtir";
+  button.classList.toggle("is-liked", liked);
+  button.disabled = !state.session;
+
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await toggleLike(entry, button);
+  });
+}
+
+async function toggleLike(entry, button) {
+  if (!state.session) {
+    updateSessionState("error", "entre para curtir");
+    return;
+  }
+
+  button.disabled = true;
+
+  try {
+    if (entry.viewerLikeUri) {
+      await apiFetch(state.session.service, "com.atproto.repo.deleteRecord", {
+        method: "POST",
+        token: state.session.accessJwt,
+        body: {
+          repo: state.session.did,
+          collection: "app.bsky.feed.like",
+          rkey: entry.viewerLikeUri.split("/").pop(),
+        },
+      });
+
+      applyLikeMutation(entry.uri, null, -1);
+    } else {
+      const created = await apiFetch(state.session.service, "com.atproto.repo.createRecord", {
+        method: "POST",
+        token: state.session.accessJwt,
+        body: {
+          repo: state.session.did,
+          collection: "app.bsky.feed.like",
+          record: {
+            $type: "app.bsky.feed.like",
+            subject: {
+              uri: entry.uri,
+              cid: entry.cid,
+            },
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      applyLikeMutation(entry.uri, created.uri, 1);
+    }
+
+    rerenderVisibleFeeds();
+  } catch (error) {
+    console.error(error);
+    updateSessionState("error", "erro ao curtir");
+  } finally {
+    button.disabled = !state.session;
+  }
+}
+
+function applyLikeMutation(uri, likeUri, delta) {
+  state.rawTimeline.forEach((item) => {
+    if (item.post?.uri === uri) {
+      item.post.likeCount = Math.max(0, Number(item.post.likeCount || 0) + delta);
+      item.post.viewer = item.post.viewer || {};
+      item.post.viewer.like = likeUri || undefined;
+    }
+  });
+
+  state.personalRanked = state.personalRanked.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          likeCount: Math.max(0, item.likeCount + delta),
+          viewerLikeUri: likeUri,
+        }
+      : item
+  );
+
+  state.personalFeed = state.personalFeed.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          likeCount: Math.max(0, item.likeCount + delta),
+          viewerLikeUri: likeUri,
+        }
+      : item
+  );
+
+  state.globalFeed = state.globalFeed.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          likeCount: Math.max(0, item.likeCount + delta),
+          viewerLikeUri: likeUri,
+        }
+      : item
+  );
+}
+
+function rerenderVisibleFeeds() {
+  renderPersonalFeed(state.personalFeed);
+  renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
 }
 
 function getBadgeLabel(entry) {
@@ -660,10 +1142,16 @@ function logout() {
   state.session = null;
   state.profile = null;
   state.rawTimeline = [];
+  state.personalRanked = [];
   state.personalFeed = [];
+  state.globalFeed = [];
+  resetPersonalWindowing();
+  clearComposeState();
   updateProfileChip();
   updateSessionState("offline", "offline");
+  updateComposerState();
   renderPersonalFeed([], "Sessão encerrada. Entre novamente para montar seu feed.");
+  refreshGlobalFeed();
 }
 
 function normalizeFeedItem(item, source, rank = 0) {
@@ -676,6 +1164,8 @@ function normalizeFeedItem(item, source, rank = 0) {
     rank,
     source,
     uri: post.uri,
+    cid: post.cid,
+    viewerLikeUri: post.viewer?.like || null,
     postUrl: buildPostUrl(post.uri, post.author?.did),
     authorName,
     authorHandle: post.author?.handle || "desconhecido",
@@ -742,11 +1232,11 @@ function getVelocity(item) {
   return getEngagementUnits(item) / Math.max(getAgeMinutes(item), 3);
 }
 
-function isHotNowCandidate(item) {
+function isHotNowCandidate(item, thresholds) {
   return (
     getAgeMinutes(item) <= RECENT_HOT_WINDOW_MINUTES &&
-    getEngagementUnits(item) >= RECENT_HOT_MIN_ENGAGEMENT &&
-    getVelocity(item) >= RECENT_HOT_MIN_VELOCITY
+    getEngagementUnits(item) >= thresholds.minEngagement &&
+    getVelocity(item) >= thresholds.minVelocity
   );
 }
 
@@ -788,6 +1278,28 @@ function formatRelativeTime(dateInput) {
   }
 
   return rtf.format(Math.round(diffHours / 24), "day");
+}
+
+function getNextWindowHours(currentWindowHours) {
+  const normalizedCurrent = normalizeWindowValue(currentWindowHours);
+  return WINDOW_SEQUENCE.find((value) => value > normalizedCurrent) || normalizedCurrent;
+}
+
+function normalizeWindowValue(windowHours) {
+  const normalized = Number(windowHours || 0.5);
+  return WINDOW_SEQUENCE.includes(normalized) ? normalized : 0.5;
+}
+
+function formatWindowLabel(windowHours) {
+  if (windowHours < 1) {
+    return `${Math.round(windowHours * 60)} minutos`;
+  }
+
+  if (Number.isInteger(windowHours)) {
+    return `${windowHours} hora${windowHours > 1 ? "s" : ""}`;
+  }
+
+  return `${String(windowHours).replace(".", ",")} horas`;
 }
 
 function makeAvatarFallback(label) {
@@ -843,13 +1355,19 @@ async function apiFetch(baseUrl, nsid, options = {}) {
     });
   }
 
+  const headers = {
+    ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+    ...(options.headers || {}),
+  };
+
+  if (!options.rawBody && options.body) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(url, {
     method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    headers,
+    body: options.rawBody || (options.body ? JSON.stringify(options.body) : undefined),
   });
 
   if (!response.ok) {
@@ -857,7 +1375,8 @@ async function apiFetch(baseUrl, nsid, options = {}) {
     throw new Error(`${nsid} failed: ${response.status} ${errorText}`);
   }
 
-  return response.json();
+  const text = await response.text();
+  return text ? JSON.parse(text) : {};
 }
 
 function loadPreferences() {
@@ -889,7 +1408,7 @@ function savePreferences() {
     STORAGE_KEY,
     JSON.stringify({
       ...state.preferences,
-      rankingVersion: 2,
+      rankingVersion: 3,
     })
   );
 }
@@ -901,4 +1420,30 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value);
+}
+
+function readImageDimensions(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      });
+      URL.revokeObjectURL(url);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to read image"));
+    };
+
+    image.src = url;
+  });
 }

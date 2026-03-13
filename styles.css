@@ -374,7 +374,8 @@ code {
 }
 
 .login-form,
-.controls-form {
+.controls-form,
+.compose-form {
   display: grid;
   gap: 14px;
   margin-top: 18px;
@@ -389,7 +390,9 @@ code {
 }
 
 .login-form input,
-.controls-form select {
+.controls-form select,
+.compose-form textarea,
+.compose-preview__meta input {
   border: 1px solid var(--line);
   outline: none;
   color: var(--text);
@@ -397,9 +400,62 @@ code {
 }
 
 .login-form input:focus,
-.controls-form select:focus {
+.controls-form select:focus,
+.compose-form textarea:focus,
+.compose-preview__meta input:focus {
   border-color: var(--blue-bright);
   box-shadow: 0 0 0 4px rgba(73, 167, 255, 0.14);
+}
+
+.compose-form textarea,
+.compose-preview__meta input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  resize: vertical;
+}
+
+.compose-form__actions,
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.compose-previews {
+  display: grid;
+  gap: 12px;
+}
+
+.compose-preview {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+
+.compose-preview img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.compose-preview__meta {
+  display: grid;
+  gap: 10px;
+}
+
+.compose-status[data-error="true"] {
+  color: #ffb0bd;
 }
 
 .login-form__actions {
@@ -593,6 +649,41 @@ code {
   background: linear-gradient(135deg, var(--cyan), var(--blue-bright));
 }
 
+.like-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.like-button.is-liked {
+  color: #03101d;
+  background: linear-gradient(135deg, var(--cyan), var(--blue-bright));
+  border-color: transparent;
+}
+
+.like-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.feed-loader {
+  min-height: 48px;
+  padding: 12px 16px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.feed-sentinel {
+  width: 100%;
+  height: 2px;
+}
+
 .empty-state {
   min-height: 260px;
   display: grid;
@@ -674,7 +765,9 @@ code {
   }
 
   .topbar__actions,
-  .login-form__actions {
+  .login-form__actions,
+  .compose-form__actions,
+  .post-actions {
     grid-template-columns: 1fr;
     display: grid;
   }

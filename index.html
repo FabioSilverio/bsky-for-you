@@ -114,6 +114,36 @@
             </div>
           </section>
 
+          <section class="panel composer-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Postar</p>
+                <h2>Escrever agora</h2>
+              </div>
+            </div>
+
+            <form class="compose-form" data-compose-form>
+              <textarea
+                name="text"
+                data-compose-text
+                rows="5"
+                maxlength="300"
+                placeholder="O que estÃ¡ acontecendo?"
+              ></textarea>
+
+              <div class="compose-form__actions">
+                <label class="ghost-button file-button">
+                  Imagens
+                  <input type="file" data-compose-images accept="image/*" multiple hidden />
+                </label>
+                <button class="primary-button" type="submit">Postar</button>
+              </div>
+
+              <div class="compose-previews" data-compose-previews hidden></div>
+              <p class="panel__hint compose-status" data-compose-status></p>
+            </form>
+          </section>
+
           <section class="panel controls-panel">
             <div class="panel__header">
               <div>
@@ -200,6 +230,8 @@
               </p>
             </article>
           </section>
+          <div class="feed-loader" data-personal-loader hidden></div>
+          <div class="feed-sentinel" data-personal-sentinel aria-hidden="true"></div>
         </section>
 
         <aside class="feed-column feed-column--global">
@@ -261,7 +293,10 @@
             <span data-replies></span>
             <span data-quotes></span>
           </div>
-          <strong class="score-pill" data-score></strong>
+          <div class="post-actions">
+            <button class="like-button" type="button" data-like-button>Curtir</button>
+            <strong class="score-pill" data-score></strong>
+          </div>
         </div>
       </article>
     </template>
