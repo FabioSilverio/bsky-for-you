@@ -7,6 +7,10 @@ const TIMELINE_PAGE_LIMIT = 100;
 const TIMELINE_MAX_PAGES = 5;
 const GLOBAL_FETCH_LIMIT = 30;
 const GLOBAL_MANUAL_PAGE_LIMIT = 3;
+const GLOBAL_BASE_PAGE_BUDGET = 3;
+const GLOBAL_DESIRED_MULTIPLIER = 3;
+const FOLLOWING_PAGE_LIMIT = 100;
+const FOLLOWING_MAX_PAGES = 15;
 const RECENT_HOT_WINDOW_MINUTES = 30;
 const BASE_MIN_ENGAGEMENT = 10;
 const BASE_MIN_VELOCITY = 0.7;
@@ -108,6 +112,9 @@ const state = {
   personalWindowHours: 0.5,
   personalRenderCount: 0,
   isLoadingMorePersonal: false,
+  followingDids: new Set(),
+  followingLoadedForDid: null,
+  followingPromise: null,
   globalCursor: null,
   globalRefreshSerial: 0,
   globalRefreshDepth: 0,
@@ -719,6 +726,7 @@ async function refreshPersonalFeed(options = {}) {
 
   try {
     state.rawTimeline = await fetchTimelinePages();
+    await ensureFollowingDids();
     rerankPersonalFeed();
     updateSessionState("online", "online");
   } catch (error) {
@@ -752,12 +760,32 @@ async function refreshGlobalFeed(options = {}) {
       state.globalRefreshDepth = Math.min(state.globalRefreshDepth + 1, GLOBAL_MANUAL_PAGE_LIMIT);
     }
 
-    const pageCount = options.manual ? 1 + state.globalRefreshDepth : 1;
-    const { feed: fetchedFeed, cursor } = await fetchGlobalFeedPages(pageCount);
+    if (state.session) {
+      await ensureFollowingDids();
+    }
+
+    const pageBudget = Math.min(
+      8,
+      GLOBAL_BASE_PAGE_BUDGET + (options.manual ? state.globalRefreshDepth * 2 : 0)
+    );
+    const desiredCount = Math.max(
+      state.preferences.postLimit * GLOBAL_DESIRED_MULTIPLIER,
+      GLOBAL_FETCH_LIMIT
+    );
+    const { feed: fetchedFeed, cursor } = await fetchGlobalFeedCandidates({
+      pageBudget,
+      desiredCount,
+      initialCursor: options.manual ? state.globalCursor : null,
+    });
     let nextFeed = fetchedFeed;
 
     if (options.manual && isMostlySameFeed(state.globalFeed, nextFeed) && cursor) {
-      const extraBatch = await fetchGlobalFeedPages(1, cursor, nextFeed.length);
+      const extraBatch = await fetchGlobalFeedCandidates({
+        pageBudget: 2,
+        desiredCount,
+        initialCursor: cursor,
+        rankOffset: nextFeed.length,
+      });
       nextFeed = mergeUniqueByUri([...nextFeed, ...extraBatch.feed]);
       state.globalCursor = extraBatch.cursor || cursor || null;
     } else {
@@ -765,7 +793,10 @@ async function refreshGlobalFeed(options = {}) {
     }
 
     state.globalRefreshSerial += 1;
-    state.globalFeed = sortGlobalFeed(nextFeed, options.manual);
+    state.globalFeed = sortGlobalFeed(nextFeed, {
+      manual: options.manual,
+      seenUris: new Set(state.globalFeed.map((item) => item.uri)),
+    });
     renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
   } catch (error) {
     console.error(error);
@@ -778,11 +809,13 @@ async function refreshGlobalFeed(options = {}) {
   }
 }
 
-async function fetchGlobalFeedPages(pageCount, initialCursor = null, rankOffset = 0) {
+async function fetchGlobalFeedCandidates(options = {}) {
   const items = [];
-  let cursor = initialCursor;
+  let cursor = options.initialCursor || null;
+  const rankOffset = options.rankOffset || 0;
+  const exclusionSets = getGlobalExclusionSets();
 
-  for (let page = 0; page < pageCount; page += 1) {
+  for (let page = 0; page < (options.pageBudget || 1); page += 1) {
     const data = await apiFetch(
       state.session ? state.session.service : PUBLIC_API,
       "app.bsky.feed.getFeed",
@@ -796,14 +829,17 @@ async function fetchGlobalFeedPages(pageCount, initialCursor = null, rankOffset 
       }
     );
 
-    items.push(
-      ...(data.feed || []).map((item, index) =>
-        normalizeFeedItem(item, "global", rankOffset + items.length + index + 1)
-      )
+    const normalizedPage = (data.feed || []).map((item, index) =>
+      normalizeFeedItem(item, "global", rankOffset + items.length + index + 1)
+    );
+    const filteredPage = normalizedPage.filter(
+      (item) => !shouldExcludeFromGlobalFeed(item, exclusionSets)
     );
 
+    items.push(...filteredPage);
+
     cursor = data.cursor || null;
-    if (!cursor) {
+    if (!cursor || items.length >= (options.desiredCount || GLOBAL_FETCH_LIMIT)) {
       break;
     }
   }
@@ -814,15 +850,24 @@ async function fetchGlobalFeedPages(pageCount, initialCursor = null, rankOffset 
   };
 }
 
-function sortGlobalFeed(feedItems, manual = false) {
+function sortGlobalFeed(feedItems, options = {}) {
+  const seenUris = options.seenUris || new Set();
   return [...feedItems].sort((left, right) => {
+    if (options.manual) {
+      const leftSeen = seenUris.has(left.uri);
+      const rightSeen = seenUris.has(right.uri);
+      if (leftSeen !== rightSeen) {
+        return leftSeen ? 1 : -1;
+      }
+    }
+
     const ageDiff = getAgeMinutes(left) - getAgeMinutes(right);
 
-    if (manual && Math.abs(ageDiff) > 6) {
+    if (options.manual && Math.abs(ageDiff) > 6) {
       return ageDiff;
     }
 
-    if (!manual && Math.abs(ageDiff) > 14) {
+    if (!options.manual && Math.abs(ageDiff) > 14) {
       return ageDiff;
     }
 
@@ -905,6 +950,85 @@ async function fetchTimelinePages() {
   }
 
   return items;
+}
+
+async function ensureFollowingDids(force = false) {
+  if (!state.session?.did) {
+    state.followingDids = new Set();
+    state.followingLoadedForDid = null;
+    return state.followingDids;
+  }
+
+  if (!force && state.followingLoadedForDid === state.session.did && state.followingDids.size > 0) {
+    return state.followingDids;
+  }
+
+  if (state.followingPromise && !force) {
+    return state.followingPromise;
+  }
+
+  state.followingPromise = (async () => {
+    const followingDids = new Set([state.session.did]);
+    let cursor = null;
+
+    for (let page = 0; page < FOLLOWING_MAX_PAGES; page += 1) {
+      const data = await apiFetch(state.session.service, "app.bsky.graph.getFollows", {
+        token: state.session.accessJwt,
+        params: {
+          actor: state.session.did,
+          limit: FOLLOWING_PAGE_LIMIT,
+          cursor,
+        },
+      });
+
+      (data.follows || []).forEach((actor) => {
+        if (actor?.did) {
+          followingDids.add(actor.did);
+        }
+      });
+
+      cursor = data.cursor || null;
+      if (!cursor) {
+        break;
+      }
+    }
+
+    state.followingDids = followingDids;
+    state.followingLoadedForDid = state.session.did;
+    return followingDids;
+  })();
+
+  try {
+    return await state.followingPromise;
+  } finally {
+    state.followingPromise = null;
+  }
+}
+
+function getGlobalExclusionSets() {
+  return {
+    followedAuthors: state.followingDids || new Set(),
+    personalUris: new Set([
+      ...state.personalRanked.map((item) => item.uri),
+      ...state.rawTimeline.map((item) => item.post?.uri).filter(Boolean),
+    ]),
+  };
+}
+
+function shouldExcludeFromGlobalFeed(item, exclusionSets) {
+  if (!item?.uri) {
+    return true;
+  }
+
+  if (exclusionSets.personalUris.has(item.uri)) {
+    return true;
+  }
+
+  if (item.authorDid && exclusionSets.followedAuthors.has(item.authorDid)) {
+    return true;
+  }
+
+  return false;
 }
 
 function rankPersonalFeed(feedItems, preferences, options) {
@@ -1696,6 +1820,9 @@ function logout() {
   state.personalRanked = [];
   state.personalFeed = [];
   state.globalFeed = [];
+  state.followingDids = new Set();
+  state.followingLoadedForDid = null;
+  state.followingPromise = null;
   clearStoredSession();
   resetPersonalWindowing();
   clearComposeState();
@@ -1720,6 +1847,7 @@ function normalizeFeedItem(item, source, rank = 0) {
     viewerLikeUri: post.viewer?.like || null,
     viewerRepostUri: post.viewer?.repost || null,
     postUrl: buildPostUrl(post.uri, post.author?.did),
+    authorDid: post.author?.did || "",
     authorName,
     authorHandle: post.author?.handle || "desconhecido",
     avatar: post.author?.avatar || "",
