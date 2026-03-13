@@ -124,7 +124,6 @@ const elements = {
   personalFeed: document.querySelector("[data-personal-feed]"),
   personalLoader: document.querySelector("[data-personal-loader]"),
   personalSentinel: document.querySelector("[data-personal-sentinel]"),
-  personalTopics: document.querySelector("[data-personal-topics]"),
   globalFeed: document.querySelector("[data-global-feed]"),
   globalTopics: document.querySelector("[data-global-topics]"),
   sessionState: document.querySelector("[data-session-state]"),
@@ -147,7 +146,6 @@ async function bootstrap() {
   setupInfiniteScroll();
   renderPersonalFeed([]);
   renderLoading(elements.globalFeed, 3);
-  renderTopics(elements.personalTopics, []);
   renderTopics(elements.globalTopics, []);
   updateSessionState("offline", "offline");
   updateComposerState();
@@ -1082,7 +1080,6 @@ function renderPersonalFeed(entries, message) {
       message ||
         "Entre com sua conta e eu monto uma timeline pessoal puxando primeiro o que disparou agora."
     );
-    renderTopics(elements.personalTopics, []);
     updatePersonalLoader();
     return;
   }
@@ -1093,7 +1090,6 @@ function renderPersonalFeed(entries, message) {
   });
 
   elements.personalFeed.replaceChildren(fragment);
-  renderTopics(elements.personalTopics, extractTrendingTopics(state.personalRanked, "personal"));
   updatePersonalLoader();
 }
 
@@ -1707,7 +1703,6 @@ function logout() {
   updateSessionState("offline", "offline");
   updateComposerState();
   renderPersonalFeed([], "Sessão encerrada. Entre novamente para montar seu feed.");
-  renderTopics(elements.personalTopics, []);
   refreshGlobalFeed();
 }
 
