@@ -214,10 +214,25 @@
         </aside>
 
         <section class="feed-column feed-column--personal">
-          <section class="feed-toolbar">
+          <section class="column-header column-header--personal">
+            <div>
+              <p class="panel__eyebrow">Seu feed</p>
+              <h2>Popular no seu following</h2>
+            </div>
             <button class="ghost-button" type="button" data-action="refresh-personal">
               Atualizar
             </button>
+          </section>
+
+          <section class="panel panel--subtle topics-panel topics-panel--personal">
+            <div class="topics-panel__header">
+              <div>
+                <p class="panel__eyebrow">Assuntos quentes</p>
+                <h3>O que esta pegando agora no seu feed</h3>
+              </div>
+              <span class="topics-panel__meta">ao vivo</span>
+            </div>
+            <div class="topic-list" data-personal-topics></div>
           </section>
 
           <section class="stack" data-personal-feed>
@@ -250,6 +265,17 @@
               Esta coluna usa o feed oficial <code>whats-hot</code> do Bluesky para te mostrar
               o que está bombando na rede inteira.
             </p>
+          </section>
+
+          <section class="panel panel--subtle topics-panel topics-panel--global">
+            <div class="topics-panel__header">
+              <div>
+                <p class="panel__eyebrow">Hashtags e temas</p>
+                <h3>O que esta puxando conversa na rede</h3>
+              </div>
+              <span class="topics-panel__meta">what's hot</span>
+            </div>
+            <div class="topic-list" data-global-topics></div>
           </section>
 
           <section class="stack" data-global-feed>
@@ -294,7 +320,10 @@
             <span data-quotes></span>
           </div>
           <div class="post-actions">
-            <button class="like-button" type="button" data-like-button>Curtir</button>
+            <div class="post-actions__group">
+              <button class="like-button" type="button" data-like-button>Curtir</button>
+              <button class="repost-button" type="button" data-repost-button>Repostar</button>
+            </div>
             <strong class="score-pill" data-score></strong>
           </div>
         </div>

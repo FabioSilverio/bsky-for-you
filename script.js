@@ -2,14 +2,98 @@ const HOT_FEED_URI =
   "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot";
 const PUBLIC_API = "https://public.api.bsky.app";
 const STORAGE_KEY = "bsky-for-you-preferences";
+const SESSION_STORAGE_KEY = "bsky-for-you-session";
 const TIMELINE_PAGE_LIMIT = 100;
 const TIMELINE_MAX_PAGES = 5;
 const GLOBAL_FETCH_LIMIT = 30;
+const GLOBAL_MANUAL_PAGE_LIMIT = 3;
 const RECENT_HOT_WINDOW_MINUTES = 30;
 const BASE_MIN_ENGAGEMENT = 10;
 const BASE_MIN_VELOCITY = 0.7;
 const WINDOW_SEQUENCE = [0.5, 1, 1.5, 2, 3, 4, 6, 12, 24];
 const MAX_COMPOSER_IMAGES = 4;
+const TRENDING_TOPICS_LIMIT = 8;
+const STOPWORDS = new Set([
+  "about",
+  "after",
+  "agora",
+  "ainda",
+  "alguem",
+  "antes",
+  "aqui",
+  "assim",
+  "being",
+  "bluesky",
+  "como",
+  "com",
+  "contra",
+  "porque",
+  "para",
+  "mais",
+  "menos",
+  "muito",
+  "muita",
+  "muitas",
+  "muitos",
+  "that",
+  "this",
+  "from",
+  "with",
+  "without",
+  "have",
+  "just",
+  "into",
+  "sobre",
+  "entre",
+  "the",
+  "and",
+  "you",
+  "your",
+  "meu",
+  "minha",
+  "meus",
+  "minhas",
+  "they",
+  "them",
+  "their",
+  "quando",
+  "onde",
+  "what",
+  "whats",
+  "been",
+  "estao",
+  "esta",
+  "esse",
+  "essa",
+  "isso",
+  "those",
+  "these",
+  "from",
+  "uma",
+  "umas",
+  "uns",
+  "nos",
+  "nas",
+  "dos",
+  "das",
+  "por",
+  "pra",
+  "pro",
+  "que",
+  "quem",
+  "will",
+  "would",
+  "https",
+  "http",
+  "coisa",
+  "coisas",
+  "news",
+  "post",
+  "posts",
+  "today",
+  "amanha",
+  "ontem",
+]);
 
 const state = {
   session: null,
@@ -26,6 +110,7 @@ const state = {
   isLoadingMorePersonal: false,
   globalCursor: null,
   globalRefreshSerial: 0,
+  globalRefreshDepth: 0,
 };
 
 const elements = {
@@ -39,7 +124,9 @@ const elements = {
   personalFeed: document.querySelector("[data-personal-feed]"),
   personalLoader: document.querySelector("[data-personal-loader]"),
   personalSentinel: document.querySelector("[data-personal-sentinel]"),
+  personalTopics: document.querySelector("[data-personal-topics]"),
   globalFeed: document.querySelector("[data-global-feed]"),
+  globalTopics: document.querySelector("[data-global-topics]"),
   sessionState: document.querySelector("[data-session-state]"),
   profileChip: document.querySelector("[data-profile-chip]"),
   profileAvatar: document.querySelector("[data-profile-avatar]"),
@@ -52,7 +139,7 @@ let personalObserver = null;
 
 bootstrap();
 
-function bootstrap() {
+async function bootstrap() {
   state.personalWindowHours = Math.max(Number(state.preferences.windowHours || 0.5), 0.5);
   state.personalRenderCount = state.preferences.postLimit;
   hydrateForms();
@@ -60,9 +147,12 @@ function bootstrap() {
   setupInfiniteScroll();
   renderPersonalFeed([]);
   renderLoading(elements.globalFeed, 3);
+  renderTopics(elements.personalTopics, []);
+  renderTopics(elements.globalTopics, []);
   updateSessionState("offline", "offline");
   updateComposerState();
-  refreshGlobalFeed();
+  await restorePersistedSession();
+  await refreshGlobalFeed();
 }
 
 function bindEvents() {
@@ -78,18 +168,24 @@ function bindEvents() {
       const action = button.dataset.action;
 
       if (action === "refresh-all") {
-        await Promise.all([
-          refreshGlobalFeed({ manual: true }),
-          state.session ? refreshPersonalFeed({ manual: true }) : Promise.resolve(),
-        ]);
+        await withButtonBusy(button, "Atualizando...", async () => {
+          await Promise.all([
+            refreshGlobalFeed({ manual: true }),
+            state.session ? refreshPersonalFeed({ manual: true }) : Promise.resolve(),
+          ]);
+        });
       }
 
       if (action === "refresh-global") {
-        await refreshGlobalFeed({ manual: true });
+        await withButtonBusy(button, "Atualizando...", () =>
+          refreshGlobalFeed({ manual: true })
+        );
       }
 
       if (action === "refresh-personal") {
-        await refreshPersonalFeed({ manual: true });
+        await withButtonBusy(button, "Atualizando...", () =>
+          refreshPersonalFeed({ manual: true })
+        );
       }
 
       if (action === "logout") {
@@ -149,6 +245,121 @@ function hydrateForms() {
     state.preferences.service || "https://bsky.social";
 }
 
+async function withButtonBusy(button, label, task) {
+  if (!button) {
+    return task();
+  }
+
+  const originalLabel = button.dataset.originalLabel || button.textContent.trim();
+  button.dataset.originalLabel = originalLabel;
+  button.disabled = true;
+  button.textContent = label;
+
+  try {
+    return await task();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function restorePersistedSession() {
+  const persisted = loadStoredSession();
+  if (!persisted) {
+    return;
+  }
+
+  state.session = persisted;
+  updateSessionState("busy", "restaurando");
+
+  try {
+    await refreshStoredSession();
+    await loadProfile();
+    updateSessionState("online", "online");
+    updateComposerState();
+    await refreshPersonalFeed();
+  } catch (error) {
+    console.error(error);
+    clearStoredSession();
+    state.session = null;
+    state.profile = null;
+    updateProfileChip();
+    updateSessionState("offline", "offline");
+    updateComposerState();
+  }
+}
+
+async function refreshStoredSession() {
+  if (!state.session?.refreshJwt) {
+    return state.session;
+  }
+
+  const refreshed = await apiFetch(
+    state.session.service,
+    "com.atproto.server.refreshSession",
+    {
+      method: "POST",
+      token: state.session.refreshJwt,
+      allowSessionRefresh: false,
+    }
+  );
+
+  state.session = {
+    accessJwt: refreshed.accessJwt,
+    refreshJwt: refreshed.refreshJwt || state.session.refreshJwt,
+    did: refreshed.did || state.session.did,
+    handle: refreshed.handle || state.session.handle,
+    service: state.session.service,
+  };
+
+  state.preferences.identifier = state.session.handle || state.preferences.identifier;
+  state.preferences.service = state.session.service;
+  savePreferences();
+  persistSession();
+  return state.session;
+}
+
+function loadStoredSession() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || "null");
+    if (!parsed?.accessJwt || !parsed?.refreshJwt || !parsed?.did || !parsed?.service) {
+      return null;
+    }
+
+    return {
+      accessJwt: parsed.accessJwt,
+      refreshJwt: parsed.refreshJwt,
+      did: parsed.did,
+      handle: parsed.handle || "",
+      service: normalizeService(parsed.service),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistSession() {
+  if (!state.session?.accessJwt || !state.session?.refreshJwt) {
+    clearStoredSession();
+    return;
+  }
+
+  localStorage.setItem(
+    SESSION_STORAGE_KEY,
+    JSON.stringify({
+      accessJwt: state.session.accessJwt,
+      refreshJwt: state.session.refreshJwt,
+      did: state.session.did,
+      handle: state.session.handle,
+      service: state.session.service,
+    })
+  );
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
 async function handleLoginSubmit(event) {
   event.preventDefault();
 
@@ -175,12 +386,16 @@ async function handleLoginSubmit(event) {
 
     state.session = {
       accessJwt: session.accessJwt,
+      refreshJwt: session.refreshJwt,
       did: session.did,
       handle: session.handle,
       service,
     };
 
+    state.preferences.identifier = session.handle || identifier;
+    state.preferences.service = service;
     persistIdentityPreferences();
+    persistSession();
     elements.loginForm.elements.namedItem("password").value = "";
     resetPersonalWindowing();
     await loadProfile();
@@ -189,6 +404,7 @@ async function handleLoginSubmit(event) {
     await Promise.all([refreshPersonalFeed(), refreshGlobalFeed()]);
   } catch (error) {
     console.error(error);
+    clearStoredSession();
     state.session = null;
     state.profile = null;
     updateProfileChip();
@@ -534,59 +750,24 @@ async function refreshGlobalFeed(options = {}) {
   }
 
   try {
-    const data = await apiFetch(
-      state.session ? state.session.service : PUBLIC_API,
-      "app.bsky.feed.getFeed",
-      {
-        token: state.session ? state.session.accessJwt : undefined,
-        params: {
-          feed: HOT_FEED_URI,
-          limit: GLOBAL_FETCH_LIMIT,
-        },
-      }
-    );
+    if (options.manual) {
+      state.globalRefreshDepth = Math.min(state.globalRefreshDepth + 1, GLOBAL_MANUAL_PAGE_LIMIT);
+    }
 
-    let nextFeed = (data.feed || []).map((item, index) =>
-      normalizeFeedItem(item, "global", index + 1)
-    );
+    const pageCount = options.manual ? 1 + state.globalRefreshDepth : 1;
+    const { feed: fetchedFeed, cursor } = await fetchGlobalFeedPages(pageCount);
+    let nextFeed = fetchedFeed;
 
-    state.globalCursor = data.cursor || null;
-
-    if (
-      options.manual &&
-      isMostlySameFeed(state.globalFeed, nextFeed) &&
-      state.globalCursor
-    ) {
-      const extra = await apiFetch(
-        state.session ? state.session.service : PUBLIC_API,
-        "app.bsky.feed.getFeed",
-        {
-          token: state.session ? state.session.accessJwt : undefined,
-          params: {
-            feed: HOT_FEED_URI,
-            limit: GLOBAL_FETCH_LIMIT,
-            cursor: state.globalCursor,
-          },
-        }
-      );
-
-      const extraFeed = (extra.feed || []).map((item, index) =>
-        normalizeFeedItem(item, "global", GLOBAL_FETCH_LIMIT + index + 1)
-      );
-
-      nextFeed = mergeUniqueByUri([...nextFeed, ...extraFeed])
-        .sort((left, right) => {
-          const freshnessDiff = getAgeMinutes(left) - getAgeMinutes(right);
-          if (Math.abs(freshnessDiff) > 8) {
-            return freshnessDiff;
-          }
-
-          return scorePost(right, state.preferences) - scorePost(left, state.preferences);
-        });
+    if (options.manual && isMostlySameFeed(state.globalFeed, nextFeed) && cursor) {
+      const extraBatch = await fetchGlobalFeedPages(1, cursor, nextFeed.length);
+      nextFeed = mergeUniqueByUri([...nextFeed, ...extraBatch.feed]);
+      state.globalCursor = extraBatch.cursor || cursor || null;
+    } else {
+      state.globalCursor = cursor || null;
     }
 
     state.globalRefreshSerial += 1;
-    state.globalFeed = nextFeed;
+    state.globalFeed = sortGlobalFeed(nextFeed, options.manual);
     renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
   } catch (error) {
     console.error(error);
@@ -595,7 +776,65 @@ async function refreshGlobalFeed(options = {}) {
       "Sem hot posts agora",
       "A consulta ao feed global falhou. Recarregue para tentar outra vez."
     );
+    renderTopics(elements.globalTopics, []);
   }
+}
+
+async function fetchGlobalFeedPages(pageCount, initialCursor = null, rankOffset = 0) {
+  const items = [];
+  let cursor = initialCursor;
+
+  for (let page = 0; page < pageCount; page += 1) {
+    const data = await apiFetch(
+      state.session ? state.session.service : PUBLIC_API,
+      "app.bsky.feed.getFeed",
+      {
+        token: state.session ? state.session.accessJwt : undefined,
+        params: {
+          feed: HOT_FEED_URI,
+          limit: GLOBAL_FETCH_LIMIT,
+          cursor,
+        },
+      }
+    );
+
+    items.push(
+      ...(data.feed || []).map((item, index) =>
+        normalizeFeedItem(item, "global", rankOffset + items.length + index + 1)
+      )
+    );
+
+    cursor = data.cursor || null;
+    if (!cursor) {
+      break;
+    }
+  }
+
+  return {
+    feed: mergeUniqueByUri(items),
+    cursor,
+  };
+}
+
+function sortGlobalFeed(feedItems, manual = false) {
+  return [...feedItems].sort((left, right) => {
+    const ageDiff = getAgeMinutes(left) - getAgeMinutes(right);
+
+    if (manual && Math.abs(ageDiff) > 6) {
+      return ageDiff;
+    }
+
+    if (!manual && Math.abs(ageDiff) > 14) {
+      return ageDiff;
+    }
+
+    const scoreDiff = scorePost(right, state.preferences) - scorePost(left, state.preferences);
+    if (Math.abs(scoreDiff) > 3) {
+      return scoreDiff;
+    }
+
+    return ageDiff;
+  });
 }
 
 function updatePersonalLoader() {
@@ -843,6 +1082,7 @@ function renderPersonalFeed(entries, message) {
       message ||
         "Entre com sua conta e eu monto uma timeline pessoal puxando primeiro o que disparou agora."
     );
+    renderTopics(elements.personalTopics, []);
     updatePersonalLoader();
     return;
   }
@@ -853,6 +1093,7 @@ function renderPersonalFeed(entries, message) {
   });
 
   elements.personalFeed.replaceChildren(fragment);
+  renderTopics(elements.personalTopics, extractTrendingTopics(state.personalRanked, "personal"));
   updatePersonalLoader();
 }
 
@@ -863,6 +1104,7 @@ function renderGlobalFeed(entries) {
       "Sem posts globais agora",
       "O feed oficial What's Hot não retornou resultados nesta tentativa."
     );
+    renderTopics(elements.globalTopics, []);
     updateDashboardStats();
     return;
   }
@@ -878,6 +1120,7 @@ function renderGlobalFeed(entries) {
   });
 
   elements.globalFeed.replaceChildren(fragment);
+  renderTopics(elements.globalTopics, extractTrendingTopics(state.globalFeed, "global"));
   updateDashboardStats();
 }
 
@@ -896,7 +1139,10 @@ function buildPostCard(entry) {
   const quotes = node.querySelector("[data-quotes]");
   const score = node.querySelector("[data-score]");
   const likeButton = node.querySelector("[data-like-button]");
+  const repostButton = node.querySelector("[data-repost-button]");
   const embed = node.querySelector("[data-embed]");
+
+  node.dataset.source = entry.source;
 
   avatar.src = entry.avatar || makeAvatarFallback(entry.authorName);
   avatar.alt = `Avatar de ${entry.authorName}`;
@@ -920,6 +1166,7 @@ function buildPostCard(entry) {
   }
 
   configureLikeButton(likeButton, entry);
+  configureRepostButton(repostButton, entry);
 
   const embedNodes = buildEmbedNodes(entry.embed);
   if (embedNodes.length > 0) {
@@ -944,6 +1191,23 @@ function configureLikeButton(button, entry) {
     event.preventDefault();
     event.stopPropagation();
     await toggleLike(entry, button);
+  });
+}
+
+function configureRepostButton(button, entry) {
+  if (!button) {
+    return;
+  }
+
+  const reposted = Boolean(entry.viewerRepostUri);
+  button.textContent = reposted ? "Repostado" : "Repostar";
+  button.classList.toggle("is-reposted", reposted);
+  button.disabled = !state.session;
+
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await toggleRepost(entry, button);
   });
 }
 
@@ -998,6 +1262,57 @@ async function toggleLike(entry, button) {
   }
 }
 
+async function toggleRepost(entry, button) {
+  if (!state.session) {
+    updateSessionState("error", "entre para repostar");
+    return;
+  }
+
+  button.disabled = true;
+
+  try {
+    if (entry.viewerRepostUri) {
+      await apiFetch(state.session.service, "com.atproto.repo.deleteRecord", {
+        method: "POST",
+        token: state.session.accessJwt,
+        body: {
+          repo: state.session.did,
+          collection: "app.bsky.feed.repost",
+          rkey: entry.viewerRepostUri.split("/").pop(),
+        },
+      });
+
+      applyRepostMutation(entry.uri, null, -1);
+    } else {
+      const created = await apiFetch(state.session.service, "com.atproto.repo.createRecord", {
+        method: "POST",
+        token: state.session.accessJwt,
+        body: {
+          repo: state.session.did,
+          collection: "app.bsky.feed.repost",
+          record: {
+            $type: "app.bsky.feed.repost",
+            subject: {
+              uri: entry.uri,
+              cid: entry.cid,
+            },
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      applyRepostMutation(entry.uri, created.uri, 1);
+    }
+
+    rerenderVisibleFeeds();
+  } catch (error) {
+    console.error(error);
+    updateSessionState("error", "erro ao repostar");
+  } finally {
+    button.disabled = !state.session;
+  }
+}
+
 function applyLikeMutation(uri, likeUri, delta) {
   state.rawTimeline.forEach((item) => {
     if (item.post?.uri === uri) {
@@ -1033,6 +1348,46 @@ function applyLikeMutation(uri, likeUri, delta) {
           ...item,
           likeCount: Math.max(0, item.likeCount + delta),
           viewerLikeUri: likeUri,
+        }
+      : item
+  );
+}
+
+function applyRepostMutation(uri, repostUri, delta) {
+  state.rawTimeline.forEach((item) => {
+    if (item.post?.uri === uri) {
+      item.post.repostCount = Math.max(0, Number(item.post.repostCount || 0) + delta);
+      item.post.viewer = item.post.viewer || {};
+      item.post.viewer.repost = repostUri || undefined;
+    }
+  });
+
+  state.personalRanked = state.personalRanked.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          repostCount: Math.max(0, item.repostCount + delta),
+          viewerRepostUri: repostUri,
+        }
+      : item
+  );
+
+  state.personalFeed = state.personalFeed.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          repostCount: Math.max(0, item.repostCount + delta),
+          viewerRepostUri: repostUri,
+        }
+      : item
+  );
+
+  state.globalFeed = state.globalFeed.map((item) =>
+    item.uri === uri
+      ? {
+          ...item,
+          repostCount: Math.max(0, item.repostCount + delta),
+          viewerRepostUri: repostUri,
         }
       : item
   );
@@ -1165,6 +1520,105 @@ function renderEmptyState(container, title, copy) {
   container.replaceChildren(node);
 }
 
+function renderTopics(container, topics) {
+  if (!container) {
+    return;
+  }
+
+  if (!topics.length) {
+    const empty = document.createElement("p");
+    empty.className = "topic-list__empty";
+    empty.textContent = "Atualize o feed para eu puxar os temas mais quentes.";
+    container.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  topics.forEach((topic) => {
+    const node = document.createElement("article");
+    node.className = "topic-chip";
+    node.innerHTML = `
+      <strong>${escapeHtml(topic.label)}</strong>
+      <span>${escapeHtml(topic.context)}</span>
+    `;
+    fragment.appendChild(node);
+  });
+
+  container.replaceChildren(fragment);
+}
+
+function extractTrendingTopics(entries, source) {
+  const weights = new Map();
+
+  entries.slice(0, 60).forEach((entry, index) => {
+    const rankingWeight = Math.max(1, 14 - index);
+    const scoreWeight = Math.max(1, Math.round((entry.score || scorePost(entry, state.preferences)) / 70));
+    const freshnessWeight = Math.max(1, 8 - Math.floor(getAgeMinutes(entry) / 12));
+    const totalWeight = rankingWeight + scoreWeight + freshnessWeight;
+
+    collectHashtagTopics(entry).forEach((label) => {
+      upsertTopic(weights, label, totalWeight, "hashtag");
+    });
+
+    collectKeywordTopics(entry).forEach((label) => {
+      upsertTopic(weights, label, Math.max(1, Math.round(totalWeight * 0.65)), "keyword");
+    });
+  });
+
+  return [...weights.values()]
+    .sort((left, right) => {
+      if (right.weight !== left.weight) {
+        return right.weight - left.weight;
+      }
+
+      return left.label.localeCompare(right.label, "pt-BR");
+    })
+    .slice(0, TRENDING_TOPICS_LIMIT)
+    .map((topic) => ({
+      label: topic.type === "hashtag" ? topic.label : `#${topic.label.replace(/\s+/g, "")}`,
+      context:
+        source === "personal"
+          ? `${topic.count} sinais no seu feed`
+          : `${topic.count} sinais no whats hot`,
+    }));
+}
+
+function collectHashtagTopics(entry) {
+  const matches = String(entry.text || "").match(/(^|\s)(#[\p{L}\p{N}_-]{2,40})/gu) || [];
+  return [...new Set(matches.map((match) => match.trim().toLowerCase()))];
+}
+
+function collectKeywordTopics(entry) {
+  const words = String(entry.text || "")
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((word) => word.length >= 4 && !STOPWORDS.has(word) && !word.startsWith("#"));
+
+  return [...new Set(words.slice(0, 6))];
+}
+
+function upsertTopic(map, label, weight, type) {
+  if (!label) {
+    return;
+  }
+
+  const existing = map.get(label);
+  if (existing) {
+    existing.weight += weight;
+    existing.count += 1;
+    return;
+  }
+
+  map.set(label, {
+    label,
+    weight,
+    count: 1,
+    type,
+  });
+}
+
 function updateProfileChip() {
   if (!state.profile) {
     elements.profileChip.hidden = true;
@@ -1246,12 +1700,14 @@ function logout() {
   state.personalRanked = [];
   state.personalFeed = [];
   state.globalFeed = [];
+  clearStoredSession();
   resetPersonalWindowing();
   clearComposeState();
   updateProfileChip();
   updateSessionState("offline", "offline");
   updateComposerState();
   renderPersonalFeed([], "Sessão encerrada. Entre novamente para montar seu feed.");
+  renderTopics(elements.personalTopics, []);
   refreshGlobalFeed();
 }
 
@@ -1267,6 +1723,7 @@ function normalizeFeedItem(item, source, rank = 0) {
     uri: post.uri,
     cid: post.cid,
     viewerLikeUri: post.viewer?.like || null,
+    viewerRepostUri: post.viewer?.repost || null,
     postUrl: buildPostUrl(post.uri, post.author?.did),
     authorName,
     authorHandle: post.author?.handle || "desconhecido",
@@ -1508,6 +1965,21 @@ async function apiFetch(baseUrl, nsid, options = {}) {
   });
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      options.allowSessionRefresh !== false &&
+      state.session?.refreshJwt &&
+      options.token &&
+      options.token === state.session.accessJwt
+    ) {
+      await refreshStoredSession();
+      return apiFetch(baseUrl, nsid, {
+        ...options,
+        token: state.session.accessJwt,
+        allowSessionRefresh: false,
+      });
+    }
+
     const errorText = await response.text();
     throw new Error(`${nsid} failed: ${response.status} ${errorText}`);
   }
