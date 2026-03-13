@@ -115,7 +115,7 @@
             </div>
           </section>
 
-          <section class="panel composer-panel">
+          <section class="panel composer-panel" id="compose-card">
             <div class="panel__header">
               <div>
                 <p class="panel__eyebrow">Postar</p>
@@ -214,7 +214,7 @@
           </section>
         </aside>
 
-        <section class="feed-column feed-column--personal">
+        <section class="feed-column feed-column--personal" id="personal-feed-column">
           <section class="column-header column-header--personal">
             <div>
               <p class="panel__eyebrow">Seu feed</p>
@@ -239,7 +239,7 @@
           <div class="feed-sentinel" data-personal-sentinel aria-hidden="true"></div>
         </section>
 
-        <aside class="feed-column feed-column--global">
+        <aside class="feed-column feed-column--global" id="global-feed-column">
           <section class="column-header">
             <div>
               <p class="panel__eyebrow">Bluesky agora</p>
@@ -277,6 +277,13 @@
           </section>
         </aside>
       </main>
+
+      <nav class="mobile-dock" aria-label="Navegacao rapida">
+        <a class="mobile-dock__link" href="#personal-feed-column">Seu feed</a>
+        <a class="mobile-dock__link" href="#global-feed-column">Global</a>
+        <a class="mobile-dock__link" href="#compose-card">Postar</a>
+        <a class="mobile-dock__link" href="#login-card">Conta</a>
+      </nav>
     </div>
 
     <template id="post-card-template">
