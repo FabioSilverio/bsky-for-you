@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bsky for you | sua timeline do Bluesky, só com o que mais bomba</title>
+    <meta
+      name="description"
+      content="Uma For You pessoal para o Bluesky: conecta na sua timeline, descobre os posts recentes mais populares de quem você segue e mostra também o que está bombando no Bluesky."
+    />
+    <meta name="theme-color" content="#04111f" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-backdrop" aria-hidden="true">
+      <div class="page-backdrop__orb page-backdrop__orb--one"></div>
+      <div class="page-backdrop__orb page-backdrop__orb--two"></div>
+      <div class="page-backdrop__grid"></div>
+    </div>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <a class="brand" href="#top">
+            <span class="brand__logo">b</span>
+            <span>
+              <strong>bsky for you</strong>
+              <small>um remix sleek da experiência do Bluesky</small>
+            </span>
+          </a>
+
+          <div class="brand-pills" aria-label="Resumo do app">
+            <span>seguindo + ranking</span>
+            <span>what's hot global</span>
+            <span>100% estático</span>
+          </div>
+        </div>
+
+        <div class="topbar__actions">
+          <button class="ghost-button" type="button" data-action="refresh-all">
+            Atualizar tudo
+          </button>
+          <a class="primary-button" href="#login-card">Conectar Bluesky</a>
+        </div>
+      </header>
+
+      <main class="layout" id="top">
+        <aside class="sidebar">
+          <section class="panel panel--hero">
+            <p class="panel__eyebrow">For You pessoal</p>
+            <h1>Seu following feed, só que reorganizado pelo que realmente está rendendo.</h1>
+            <p class="panel__copy">
+              Este app busca sua timeline do Bluesky, calcula um score para cada post
+              recente e te devolve uma versão mais afiada do feed. Menos ruído. Mais
+              coisa boa. Mais vibe de discover tab.
+            </p>
+
+            <div class="hero-stats">
+              <article>
+                <strong data-stat="scanned">0</strong>
+                <span>posts lidos</span>
+              </article>
+              <article>
+                <strong data-stat="personal">0</strong>
+                <span>tops do seu feed</span>
+              </article>
+              <article>
+                <strong data-stat="global">0</strong>
+                <span>hot posts globais</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel login-panel" id="login-card">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Sua conta</p>
+                <h2>Conectar ao Bluesky</h2>
+              </div>
+              <span class="status-badge" data-session-state>offline</span>
+            </div>
+
+            <form class="login-form" data-login-form>
+              <label>
+                Handle
+                <input
+                  type="text"
+                  name="identifier"
+                  placeholder="seunome.bsky.social"
+                  autocomplete="username"
+                  required
+                />
+              </label>
+
+              <label>
+                App password
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="xxxx-xxxx-xxxx-xxxx"
+                  autocomplete="current-password"
+                  required
+                />
+              </label>
+
+              <label>
+                Servidor
+                <input
+                  type="url"
+                  name="service"
+                  value="https://bsky.social"
+                  placeholder="https://bsky.social"
+                />
+              </label>
+
+              <div class="login-form__actions">
+                <button class="primary-button" type="submit">Entrar e puxar feed</button>
+                <button class="ghost-button" type="button" data-action="logout">Sair</button>
+              </div>
+            </form>
+
+            <p class="panel__hint">
+              Use uma <strong>app password</strong> do Bluesky. O login vai direto do seu
+              navegador para a API do Bluesky, sem backend próprio.
+            </p>
+
+            <div class="profile-chip" data-profile-chip hidden>
+              <img alt="" data-profile-avatar />
+              <div>
+                <strong data-profile-name></strong>
+                <span data-profile-handle></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel controls-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Ajustes</p>
+                <h2>Seu ranking</h2>
+              </div>
+            </div>
+
+            <form class="controls-form" data-controls-form>
+              <label>
+                Modo
+                <select name="mode">
+                  <option value="balanced">Balanced</option>
+                  <option value="viral">Viral</option>
+                  <option value="rising">Rising</option>
+                </select>
+              </label>
+
+              <label>
+                Janela de tempo
+                <select name="windowHours">
+                  <option value="6">6 horas</option>
+                  <option value="12">12 horas</option>
+                  <option value="24">24 horas</option>
+                  <option value="48">48 horas</option>
+                </select>
+              </label>
+
+              <label>
+                Quantidade de posts
+                <select name="postLimit">
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                </select>
+              </label>
+
+              <label class="toggle">
+                <input type="checkbox" name="includeReposts" checked />
+                <span>Permitir reposts no ranking</span>
+              </label>
+            </form>
+
+            <div class="score-explainer">
+              <p>
+                <strong>Balanced</strong> mistura likes, reposts, quotes, replies, bookmarks
+                e recência.
+              </p>
+              <p>
+                <strong>Viral</strong> favorece posts que já explodiram.
+              </p>
+              <p>
+                <strong>Rising</strong> tenta puxar o que está subindo agora.
+              </p>
+            </div>
+          </section>
+        </aside>
+
+        <section class="feed-column feed-column--personal">
+          <section class="column-header">
+            <div>
+              <p class="panel__eyebrow">Seu For You</p>
+              <h2>Mais populares de quem você segue</h2>
+            </div>
+            <button class="ghost-button" type="button" data-action="refresh-personal">
+              Atualizar
+            </button>
+          </section>
+
+          <section class="summary-grid">
+            <article class="mini-stat">
+              <span>janela</span>
+              <strong data-summary-window>24h</strong>
+            </article>
+            <article class="mini-stat">
+              <span>média de score</span>
+              <strong data-summary-score>0</strong>
+            </article>
+            <article class="mini-stat">
+              <span>likes no topo</span>
+              <strong data-summary-likes>0</strong>
+            </article>
+          </section>
+
+          <section class="stack" data-personal-feed>
+            <article class="empty-state">
+              <p class="empty-state__eyebrow">Conecte sua conta</p>
+              <h3>Assim que você entrar, eu reorganizo sua timeline por relevância recente.</h3>
+              <p>
+                O app busca as páginas mais novas do seu feed de seguindo, calcula um score e
+                sobe os posts mais fortes.
+              </p>
+            </article>
+          </section>
+        </section>
+
+        <aside class="feed-column feed-column--global">
+          <section class="column-header">
+            <div>
+              <p class="panel__eyebrow">Bluesky agora</p>
+              <h2>Posts populares no geral</h2>
+            </div>
+            <button class="ghost-button" type="button" data-action="refresh-global">
+              Recarregar
+            </button>
+          </section>
+
+          <section class="panel panel--subtle global-intro">
+            <p>
+              Esta coluna usa o feed oficial <code>whats-hot</code> do Bluesky para te mostrar
+              o que está bombando na rede inteira.
+            </p>
+          </section>
+
+          <section class="stack" data-global-feed>
+            <article class="loading-card">
+              <div class="loading-card__bar"></div>
+              <div class="loading-card__bar loading-card__bar--wide"></div>
+              <div class="loading-card__bar"></div>
+            </article>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <template id="post-card-template">
+      <article class="post-card">
+        <div class="post-card__top">
+          <div class="author-block">
+            <img alt="" class="author-block__avatar" data-avatar />
+            <div>
+              <strong data-name></strong>
+              <span data-handle></span>
+            </div>
+          </div>
+
+          <div class="meta-block">
+            <span class="post-badge" data-badge hidden></span>
+            <time data-time></time>
+          </div>
+        </div>
+
+        <a class="post-card__link" data-post-link target="_blank" rel="noreferrer">
+          <h3 data-title></h3>
+          <p data-text></p>
+        </a>
+
+        <div class="embed-strip" data-embed hidden></div>
+
+        <div class="post-card__footer">
+          <div class="engagement-row">
+            <span data-likes></span>
+            <span data-reposts></span>
+            <span data-replies></span>
+            <span data-quotes></span>
+          </div>
+          <strong class="score-pill" data-score></strong>
+        </div>
+      </article>
+    </template>
+
+    <script src="script.js"></script>
+  </body>
+</html>
