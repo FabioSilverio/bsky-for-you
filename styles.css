@@ -548,7 +548,7 @@ code {
 .post-card,
 .loading-card,
 .empty-state {
-  padding: 18px;
+  padding: 16px;
 }
 
 .author-block {
@@ -559,13 +559,13 @@ code {
 
 .author-block strong {
   display: block;
-  font-size: 1rem;
+  font-size: 0.96rem;
 }
 
 .author-block span,
 .meta-block,
 .engagement-row {
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 .meta-block {
@@ -582,15 +582,15 @@ code {
 
 .post-card__link {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .post-card p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 1.28rem;
-  line-height: 1.64;
+  font-size: 1.08rem;
+  line-height: 1.58;
   white-space: pre-wrap;
 }
 
@@ -634,24 +634,27 @@ code {
 }
 
 .post-card__footer {
-  margin-top: 16px;
+  margin-top: 14px;
   align-items: end;
 }
 
 .engagement-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
 .score-pill {
   color: #03101d;
   background: linear-gradient(135deg, var(--cyan), var(--blue-bright));
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 0.78rem;
 }
 
 .like-button {
-  min-height: 42px;
-  padding: 0 16px;
+  min-height: 38px;
+  padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--text);

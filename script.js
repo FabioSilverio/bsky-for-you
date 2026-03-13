@@ -24,6 +24,8 @@ const state = {
   personalWindowHours: 0.5,
   personalRenderCount: 0,
   isLoadingMorePersonal: false,
+  globalCursor: null,
+  globalRefreshSerial: 0,
 };
 
 const elements = {
@@ -77,13 +79,13 @@ function bindEvents() {
 
       if (action === "refresh-all") {
         await Promise.all([
-          refreshGlobalFeed(),
+          refreshGlobalFeed({ manual: true }),
           state.session ? refreshPersonalFeed({ manual: true }) : Promise.resolve(),
         ]);
       }
 
       if (action === "refresh-global") {
-        await refreshGlobalFeed();
+        await refreshGlobalFeed({ manual: true });
       }
 
       if (action === "refresh-personal") {
@@ -497,7 +499,9 @@ async function refreshPersonalFeed(options = {}) {
   }
 
   updateSessionState("busy", "sincronizando");
-  renderLoading(elements.personalFeed, 4);
+  if (state.personalFeed.length === 0) {
+    renderLoading(elements.personalFeed, 4);
+  }
 
   try {
     state.rawTimeline = await fetchTimelinePages();
@@ -515,13 +519,19 @@ function rerankPersonalFeed() {
     relaxLevel: state.personalRelaxLevel,
     windowHours: state.personalWindowHours,
   });
-  state.personalFeed = state.personalRanked.slice(0, state.personalRenderCount);
+  state.personalFeed = selectVisiblePersonalFeed(
+    state.personalRanked,
+    state.personalRenderCount,
+    state.personalWindowHours
+  );
   renderPersonalFeed(state.personalFeed);
   updatePersonalLoader();
 }
 
-async function refreshGlobalFeed() {
-  renderLoading(elements.globalFeed, 3);
+async function refreshGlobalFeed(options = {}) {
+  if (state.globalFeed.length === 0) {
+    renderLoading(elements.globalFeed, 3);
+  }
 
   try {
     const data = await apiFetch(
@@ -536,10 +546,47 @@ async function refreshGlobalFeed() {
       }
     );
 
-    state.globalFeed = (data.feed || []).map((item, index) =>
+    let nextFeed = (data.feed || []).map((item, index) =>
       normalizeFeedItem(item, "global", index + 1)
     );
 
+    state.globalCursor = data.cursor || null;
+
+    if (
+      options.manual &&
+      isMostlySameFeed(state.globalFeed, nextFeed) &&
+      state.globalCursor
+    ) {
+      const extra = await apiFetch(
+        state.session ? state.session.service : PUBLIC_API,
+        "app.bsky.feed.getFeed",
+        {
+          token: state.session ? state.session.accessJwt : undefined,
+          params: {
+            feed: HOT_FEED_URI,
+            limit: GLOBAL_FETCH_LIMIT,
+            cursor: state.globalCursor,
+          },
+        }
+      );
+
+      const extraFeed = (extra.feed || []).map((item, index) =>
+        normalizeFeedItem(item, "global", GLOBAL_FETCH_LIMIT + index + 1)
+      );
+
+      nextFeed = mergeUniqueByUri([...nextFeed, ...extraFeed])
+        .sort((left, right) => {
+          const freshnessDiff = getAgeMinutes(left) - getAgeMinutes(right);
+          if (Math.abs(freshnessDiff) > 8) {
+            return freshnessDiff;
+          }
+
+          return scorePost(right, state.preferences) - scorePost(left, state.preferences);
+        });
+    }
+
+    state.globalRefreshSerial += 1;
+    state.globalFeed = nextFeed;
     renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
   } catch (error) {
     console.error(error);
@@ -636,6 +683,7 @@ function rankPersonalFeed(feedItems, preferences, options) {
     .filter((item) => isHotNowCandidate(item, thresholds))
     .map((item) => ({
       ...item,
+      bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
     .sort(compareHotNow);
@@ -648,6 +696,7 @@ function rankPersonalFeed(feedItems, preferences, options) {
     )
     .map((item) => ({
       ...item,
+      bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
     .sort(compareRecentMomentum);
@@ -658,6 +707,7 @@ function rankPersonalFeed(feedItems, preferences, options) {
     .filter((item) => !hotUris.has(item.uri) && !recentUris.has(item.uri))
     .map((item) => ({
       ...item,
+      bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
     .sort((left, right) => right.score - left.score);
@@ -666,6 +716,57 @@ function rankPersonalFeed(feedItems, preferences, options) {
     ...item,
     rank: index + 1,
   }));
+}
+
+function selectVisiblePersonalFeed(ranked, maxCount, windowHours) {
+  const unlockedBucketIndexes = getUnlockedBucketIndexes(windowHours);
+  const grouped = new Map();
+
+  ranked.forEach((item) => {
+    if (!unlockedBucketIndexes.includes(item.bucketIndex)) {
+      return;
+    }
+
+    if (!grouped.has(item.bucketIndex)) {
+      grouped.set(item.bucketIndex, []);
+    }
+
+    grouped.get(item.bucketIndex).push(item);
+  });
+
+  const selected = [];
+  const usedUris = new Set();
+  let remaining = maxCount;
+  let activeBucketIndexes = unlockedBucketIndexes.filter(
+    (bucketIndex) => (grouped.get(bucketIndex) || []).length > 0
+  );
+
+  while (remaining > 0 && activeBucketIndexes.length > 0) {
+    const quota = Math.max(1, Math.ceil(remaining / activeBucketIndexes.length));
+
+    activeBucketIndexes.forEach((bucketIndex) => {
+      const bucket = grouped.get(bucketIndex) || [];
+      let taken = 0;
+
+      while (bucket.length > 0 && taken < quota && remaining > 0) {
+        const candidate = bucket.shift();
+        if (usedUris.has(candidate.uri)) {
+          continue;
+        }
+
+        usedUris.add(candidate.uri);
+        selected.push(candidate);
+        taken += 1;
+        remaining -= 1;
+      }
+    });
+
+    activeBucketIndexes = activeBucketIndexes.filter(
+      (bucketIndex) => (grouped.get(bucketIndex) || []).length > 0
+    );
+  }
+
+  return selected;
 }
 
 function scorePost(item, preferences) {
@@ -1252,6 +1353,29 @@ function dedupeByUri(items) {
   });
 }
 
+function mergeUniqueByUri(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.uri)) {
+      return false;
+    }
+
+    seen.add(item.uri);
+    return true;
+  });
+}
+
+function isMostlySameFeed(currentFeed, nextFeed) {
+  if (!currentFeed.length || !nextFeed.length) {
+    return false;
+  }
+
+  const currentTop = currentFeed.slice(0, 8).map((item) => item.uri);
+  const nextTop = nextFeed.slice(0, 8).map((item) => item.uri);
+  const overlap = nextTop.filter((uri) => currentTop.includes(uri)).length;
+  return overlap >= Math.min(currentTop.length, nextTop.length) - 1;
+}
+
 function roundScore(value) {
   return Number(value.toFixed(1));
 }
@@ -1283,6 +1407,19 @@ function formatRelativeTime(dateInput) {
 function getNextWindowHours(currentWindowHours) {
   const normalizedCurrent = normalizeWindowValue(currentWindowHours);
   return WINDOW_SEQUENCE.find((value) => value > normalizedCurrent) || normalizedCurrent;
+}
+
+function getUnlockedBucketIndexes(windowHours) {
+  const cutoffMinutes = normalizeWindowValue(windowHours) * 60;
+  return WINDOW_SEQUENCE.map((value, index) => ({ value, index }))
+    .filter((item) => item.value * 60 <= cutoffMinutes)
+    .map((item) => item.index);
+}
+
+function getWindowBucketIndex(ageMinutes) {
+  const ageHours = ageMinutes / 60;
+  const foundIndex = WINDOW_SEQUENCE.findIndex((windowValue) => ageHours <= windowValue);
+  return foundIndex === -1 ? WINDOW_SEQUENCE.length : foundIndex;
 }
 
 function normalizeWindowValue(windowHours) {
