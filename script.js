@@ -1198,23 +1198,10 @@ function scorePost(item, preferences) {
   const mediaBonus = hasRichEmbed(item.embed) ? 10 : 0;
   const freshnessBoost = Math.max(0, RECENT_HOT_WINDOW_MINUTES - ageMinutes) * 4.6;
   const basePenalty = penaltyMultiplier(item);
-
-  if (preferences.mode === "viral") {
-    return roundScore(
-      (engagement * 1.28 + velocity * 88 + freshnessBoost * 0.45 + mediaBonus) *
-        basePenalty
-    );
-  }
-
-  if (preferences.mode === "rising") {
-    return roundScore(
-      (engagement * 0.82 + velocity * 176 + freshnessBoost * 1.6 + mediaBonus) *
-        basePenalty
-    );
-  }
-
+  
+  // Novo algoritmo "For You" - sempre usa modo balanced com foco em popularidade
   return roundScore(
-    (engagement + velocity * 128 + freshnessBoost + mediaBonus) * basePenalty
+    (engagement * 1.5 + velocity * 150 + freshnessBoost * 0.8 + mediaBonus) * basePenalty
   );
 }
 

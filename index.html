@@ -154,45 +154,19 @@
             </div>
 
             <form class="controls-form" data-controls-form>
-              <label>
-                Modo
-                <select name="mode">
-                  <option value="balanced">Balanced</option>
-                  <option value="viral">Viral</option>
-                  <option value="rising">Rising</option>
-                  <option value="chronological">Cronológico</option>
-                </select>
-              </label>
-
-              <label>
-                Janela de tempo
-                <select name="windowHours">
-                  <option value="0.5">30 minutos</option>
-                  <option value="2">2 horas</option>
-                  <option value="6">6 horas</option>
-                  <option value="12">12 horas</option>
-                  <option value="24">24 horas</option>
-                  <option value="48">48 horas</option>
-                </select>
-              </label>
-
-              <label>
-                Quantidade de posts
-                <select name="postLimit">
-                  <option value="10">10</option>
-                  <option value="15">15</option>
-                  <option value="20">20</option>
-                  <option value="25">25</option>
-                </select>
-              </label>
-
-              <label class="toggle">
-                <input type="checkbox" name="includeReposts" checked />
-                <span>Permitir reposts no ranking</span>
-              </label>
+              <div style="padding: 20px; text-align: center; color: #8899a6;">
+                <p style="font-size: 16px; font-weight: 600; margin-bottom: 10px;">Feed "For You"</p>
+                <p style="font-size: 14px; line-height: 1.5;">
+                  O feed agora mostra automaticamente os posts mais populares e recentes.<br>
+                  Conforme você rola para baixo, carrega mais posts com bom engajamento em ordem cronológica.
+                </p>
+                <p style="font-size: 13px; margin-top: 15px; color: #1d9bf0;">
+                  ✨ Sem filtros manuais - algoritmo inteligente ativo
+                </p>
+              </div>
             </form>
 
-            <div class="score-explainer">
+            <div class="score-explainer" style="display: none;">
               <p>
                 <strong>Balanced</strong> prioriza quem acelerou agora, mas ainda respeita volume.
               </p>
