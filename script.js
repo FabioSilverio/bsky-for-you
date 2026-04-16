@@ -206,6 +206,41 @@ function bindEvents() {
     });
   });
 
+  // Lightbox events
+  document.querySelectorAll('[data-lightbox-close]').forEach(el => {
+    el.addEventListener('click', closeLightbox);
+  });
+
+  document.querySelectorAll('[data-lightbox-prev]').forEach(el => {
+    el.addEventListener('click', () => navigateLightbox(-1));
+  });
+
+  document.querySelectorAll('[data-lightbox-next]').forEach(el => {
+    el.addEventListener('click', () => navigateLightbox(1));
+  });
+
+  // Quote modal events
+  document.querySelectorAll('[data-quote-close]').forEach(el => {
+    el.addEventListener('click', closeQuoteModal);
+  });
+
+  document.querySelector('[data-quote-submit]')?.addEventListener('click', submitQuotePost);
+
+  // Keyboard navigation for lightbox
+  document.addEventListener('keydown', (e) => {
+    const lightboxModal = document.getElementById('lightbox-modal');
+    if (!lightboxModal.hidden) {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') navigateLightbox(-1);
+      if (e.key === 'ArrowRight') navigateLightbox(1);
+    }
+
+    const quoteModal = document.getElementById('quote-modal');
+    if (!quoteModal.hidden && e.key === 'Escape') {
+      closeQuoteModal();
+    }
+  });
+
   const identifierInput = elements.loginForm?.elements.namedItem("identifier");
   const serviceInput = elements.loginForm?.elements.namedItem("service");
 
@@ -1267,6 +1302,8 @@ function buildPostCard(entry) {
   const score = node.querySelector("[data-score]");
   const likeButton = node.querySelector("[data-like-button]");
   const repostButton = node.querySelector("[data-repost-button]");
+  const replyButton = node.querySelector("[data-reply-button]");
+  const quoteButton = node.querySelector("[data-quote-button]");
   const embed = node.querySelector("[data-embed]");
 
   node.dataset.source = entry.source;
@@ -1280,10 +1317,10 @@ function buildPostCard(entry) {
   text.textContent = entry.text || "Abrir post no Bluesky";
   link.href = entry.postUrl;
 
-  likes.textContent = `${formatCompact(entry.likeCount)} likes`;
-  reposts.textContent = `${formatCompact(entry.repostCount)} reposts`;
-  replies.textContent = `${formatCompact(entry.replyCount)} replies`;
-  quotes.textContent = `${formatCompact(entry.quoteCount)} quotes`;
+  likes.textContent = `${formatCompact(entry.likeCount)}`;
+  reposts.textContent = `${formatCompact(entry.repostCount)}`;
+  replies.textContent = `${formatCompact(entry.replyCount)}`;
+  quotes.textContent = `${formatCompact(entry.quoteCount)}`;
   score.textContent = `${entry.score.toFixed(1)} pts`;
 
   const badgeLabel = getBadgeLabel(entry);
@@ -1294,11 +1331,19 @@ function buildPostCard(entry) {
 
   configureLikeButton(likeButton, entry);
   configureRepostButton(repostButton, entry);
+  configureReplyButton(replyButton, entry);
+  configureQuoteButton(quoteButton, entry);
 
   const embedNodes = buildEmbedNodes(entry.embed);
   if (embedNodes.length > 0) {
     embed.hidden = false;
     embed.replaceChildren(...embedNodes);
+    
+    // Adicionar click para lightbox nas imagens
+    embed.querySelectorAll('img').forEach(img => {
+      img.style.cursor = 'pointer';
+      img.addEventListener('click', () => openLightbox([img.src], 0));
+    });
   }
 
   return node;
@@ -1327,7 +1372,6 @@ function configureRepostButton(button, entry) {
   }
 
   const reposted = Boolean(entry.viewerRepostUri);
-  button.textContent = reposted ? "Repostado" : "Repostar";
   button.classList.toggle("is-reposted", reposted);
   button.disabled = !state.session;
 
@@ -1336,6 +1380,120 @@ function configureRepostButton(button, entry) {
     event.stopPropagation();
     await toggleRepost(entry, button);
   });
+}
+
+function configureReplyButton(button, entry) {
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Abre o post original no Bluesky para responder
+    if (entry.postUrl) {
+      window.open(entry.postUrl, '_blank');
+    }
+  });
+}
+
+let quoteModalEntry = null;
+
+function configureQuoteButton(button, entry) {
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openQuoteModal(entry);
+  });
+}
+
+function openQuoteModal(entry) {
+  if (!state.session) {
+    updateSessionState("error", "entre para citar");
+    return;
+  }
+
+  quoteModalEntry = entry;
+  const modal = document.getElementById('quote-modal');
+  const preview = modal.querySelector('[data-quote-preview]');
+  const textarea = modal.querySelector('[data-quote-text]');
+  
+  // Criar preview do post sendo citado
+  preview.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:flex-start;">
+      <img src="${entry.avatar || makeAvatarFallback(entry.authorName)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;" alt="">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <strong style="color:var(--text);font-size:0.95rem;">${escapeHtml(entry.authorName)}</strong>
+          <span style="color:var(--text-soft);font-size:0.85rem;">@${escapeHtml(entry.authorHandle)}</span>
+        </div>
+        <p style="color:var(--text);font-size:0.9rem;margin:0;line-height:1.4;">${escapeHtml(entry.text || '')}</p>
+      </div>
+    </div>
+  `;
+  
+  textarea.value = '';
+  modal.hidden = false;
+  textarea.focus();
+}
+
+function closeQuoteModal() {
+  const modal = document.getElementById('quote-modal');
+  modal.hidden = true;
+  quoteModalEntry = null;
+}
+
+async function submitQuotePost() {
+  if (!state.session || !quoteModalEntry) {
+    return;
+  }
+
+  const modal = document.getElementById('quote-modal');
+  const textarea = modal.querySelector('[data-quote-text]');
+  const submitBtn = modal.querySelector('[data-quote-submit]');
+  const commentText = textarea.value.trim();
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Citando...';
+
+  try {
+    // Criar o quote post
+    const record = {
+      $type: "app.bsky.feed.post",
+      text: commentText || '',
+      createdAt: new Date().toISOString(),
+      embed: {
+        $type: "app.bsky.embed.record",
+        record: {
+          uri: quoteModalEntry.uri,
+          cid: quoteModalEntry.cid,
+        },
+      },
+    };
+
+    await apiFetch(state.session.service, "com.atproto.repo.createRecord", {
+      method: "POST",
+      token: state.session.accessJwt,
+      body: {
+        repo: state.session.did,
+        collection: "app.bsky.feed.post",
+        record,
+      },
+    });
+
+    closeQuoteModal();
+    await refreshPersonalFeed();
+  } catch (error) {
+    console.error(error);
+    updateSessionState("error", "erro ao citar");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Citar';
+  }
 }
 
 async function toggleLike(entry, button) {
@@ -1556,8 +1714,25 @@ function buildEmbedNodes(embed) {
     image.src = summary.url;
     image.alt = summary.alt || "";
     image.loading = "lazy";
+    image.style.cursor = 'pointer';
 
     wrapper.appendChild(image);
+    return [wrapper];
+  }
+
+  if (summary.type === "video") {
+    const wrapper = document.createElement("div");
+    wrapper.className = "embed-strip__video";
+
+    const video = document.createElement("video");
+    video.src = summary.url;
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.style.maxWidth = '100%';
+    video.style.borderRadius = '12px';
+
+    wrapper.appendChild(video);
     return [wrapper];
   }
 
@@ -1596,9 +1771,9 @@ function summarizeEmbed(embed) {
 
   if (embed.$type === "app.bsky.embed.video#view") {
     return {
-      type: "image",
-      url: embed.thumbnail,
-      alt: "Prévia de vídeo",
+      type: "video",
+      url: embed.playlist || embed.stream,
+      thumbnail: embed.thumbnail,
     };
   }
 

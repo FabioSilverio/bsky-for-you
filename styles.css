@@ -755,7 +755,76 @@ code {
   color: var(--green);
 }
 
-.like-button {
+/* Action Buttons - Twitter/X style */
+.action-button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-button__icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.action-button:hover {
+  transform: scale(1.1);
+}
+
+.reply-button:hover {
+  color: var(--blue);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.repost-button:hover {
+  color: var(--green);
+  background: rgba(0, 186, 124, 0.1);
+}
+
+.like-button:hover {
+  color: var(--danger);
+  background: rgba(249, 24, 128, 0.1);
+}
+
+.quote-button:hover {
+  color: var(--blue);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.action-button.is-liked,
+.like-button.is-liked {
+  color: var(--danger);
+}
+
+.action-button.is-reposted,
+.repost-button.is-reposted {
+  color: var(--green);
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.post-actions__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.like-button,
+.repost-button {
   min-height: 34px;
   padding: 0 12px;
   display: inline-flex;
@@ -1141,6 +1210,246 @@ code {
     border: 0;
     background: var(--blue);
     box-shadow: none;
+  }
+
+  /* Lightbox styles */
+  .lightbox-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .lightbox-modal[hidden] {
+    display: none;
+  }
+
+  .lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+  }
+
+  .lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    cursor: pointer;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .lightbox-close svg {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+  }
+
+  .lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    cursor: pointer;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .lightbox-nav svg {
+    width: 28px;
+    height: 28px;
+    fill: currentColor;
+  }
+
+  .lightbox-prev {
+    left: 16px;
+  }
+
+  .lightbox-next {
+    right: 16px;
+  }
+
+  .lightbox-content {
+    position: relative;
+    z-index: 1002;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .lightbox-media-container {
+    max-width: 100%;
+    max-height: calc(90vh - 40px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .lightbox-image {
+    max-width: 100%;
+    max-height: calc(90vh - 40px);
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  .lightbox-video {
+    max-width: 100%;
+    max-height: calc(90vh - 40px);
+    border-radius: 8px;
+  }
+
+  .lightbox-counter {
+    margin-top: 12px;
+    color: #fff;
+    font-size: 0.9rem;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 6px 12px;
+    border-radius: 16px;
+  }
+
+  /* Quote Modal styles */
+  .quote-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .quote-modal[hidden] {
+    display: none;
+  }
+
+  .quote-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  .quote-content {
+    position: relative;
+    z-index: 1001;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .quote-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-soft);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .quote-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+  }
+
+  .quote-close svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  .quote-title {
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+
+  .quote-preview {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+
+  .quote-text {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    margin-bottom: 16px;
+  }
+
+  .quote-text:focus {
+    outline: none;
+    border-color: var(--blue);
+  }
+
+  .quote-submit {
+    width: 100%;
+  }
+
+  @media (max-width: 640px) {
+    .lightbox-nav {
+      width: 40px;
+      height: 40px;
+    }
+
+    .lightbox-nav svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .lightbox-prev {
+      left: 8px;
+    }
+
+    .lightbox-next {
+      right: 8px;
+    }
+
+    .quote-content {
+      width: 95%;
+      padding: 16px;
+    }
   }
 }
 
