@@ -163,20 +163,8 @@ async function bootstrap() {
 }
 
 function startAutoRefresh() {
-  if (state.autoRefreshInterval) {
-    clearInterval(state.autoRefreshInterval);
-  }
-  
-  state.autoRefreshInterval = setInterval(async () => {
-    try {
-      await refreshGlobalFeed();
-      if (state.session) {
-        await refreshPersonalFeed();
-      }
-    } catch (error) {
-      console.error('Auto-refresh error:', error);
-    }
-  }, 2000);
+  // Auto-refresh desativado para evitar bugs de scroll e perda de posição de leitura
+  // O usuário pode atualizar manualmente com os botões "Atualizar"
 }
 
 function bindEvents() {

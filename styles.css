@@ -877,55 +877,70 @@ code {
 
 @media (max-width: 860px) {
   :root {
-    --container: min(1480px, calc(100vw - 18px));
+    --container: min(1480px, calc(100vw - 0px));
+  }
+
+  html {
+    scroll-padding-top: 70px;
+  }
+
+  body {
+    background: #000000;
   }
 
   .app-shell {
-    padding-top: 10px;
-    padding-bottom: calc(104px + env(safe-area-inset-bottom));
-  }
-
-  .topbar,
-  .panel,
-  .post-card,
-  .loading-card,
-  .empty-state {
-    border-radius: 22px;
+    padding-top: 0;
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 100%;
   }
 
   .topbar {
-    position: sticky;
-    top: 8px;
-    padding: 12px 14px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 0 16px;
+    height: 53px;
+    display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .brand-block {
-    gap: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex: 1;
   }
 
   .brand {
     min-width: 0;
-    gap: 10px;
+    gap: 12px;
   }
 
   .brand__logo {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    font-size: 1.2rem;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    font-size: 1rem;
   }
 
   .brand strong {
-    font-size: 1rem;
+    font-size: 1.1rem;
   }
 
   .brand small,
   .brand-pills,
-  .topbar__actions .primary-button {
+  .topbar__actions .primary-button,
+  .topbar__actions .ghost-button {
     display: none;
   }
 
@@ -937,54 +952,79 @@ code {
   }
 
   .layout {
+    margin-top: 53px;
     grid-template-columns: 1fr;
     grid-template-areas:
       "personal"
       "global"
       "sidebar";
-    gap: 14px;
+    gap: 0;
   }
 
   .sidebar,
   .feed-column {
-    gap: 14px;
+    gap: 0;
+  }
+
+  .feed-column--personal {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .sidebar {
+    border-left: none;
+    border-bottom: 1px solid var(--line);
   }
 
   .panel {
-    padding: 18px;
+    padding: 16px;
+    border-radius: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel--hero {
+    background: transparent;
   }
 
   .column-header {
-    z-index: 6;
-    padding: 12px 14px;
-    align-items: start;
-    flex-direction: column;
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    background: rgba(5, 18, 31, 0.88);
+    position: sticky;
+    top: 53px;
+    z-index: 50;
+    padding: 14px 16px;
+    align-items: center;
+    flex-direction: row;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.9);
     backdrop-filter: blur(16px);
-    box-shadow: var(--shadow-md);
+    box-shadow: none;
   }
 
   .column-header h2 {
-    font-size: 1.28rem;
+    font-size: 1.15rem;
+    font-weight: 700;
   }
 
   .column-header .ghost-button {
-    min-height: 42px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 0.9rem;
   }
 
   .topics-panel__header {
     flex-direction: column;
+    gap: 8px;
   }
 
   .topic-list {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
 
   .global-intro,
   .topics-panel {
-    padding: 14px 16px;
+    padding: 16px;
   }
 
   .compose-form textarea,
@@ -994,92 +1034,113 @@ code {
   }
 
   .compose-form textarea {
-    min-height: 120px;
+    min-height: 100px;
   }
 
   .post-card,
   .loading-card,
   .empty-state {
-    padding: 13px;
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
   }
 
   .author-block__avatar {
     width: 40px;
     height: 40px;
-    border-radius: 12px;
+    border-radius: 50%;
   }
 
   .post-card p {
-    font-size: 0.96rem;
-    line-height: 1.48;
+    font-size: 0.95rem;
+    line-height: 1.5;
   }
 
   .post-card__footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
   }
 
   .engagement-row {
-    gap: 8px;
+    gap: 12px;
   }
 
   .post-actions {
-    width: 100%;
-    flex-wrap: wrap;
+    width: auto;
+    flex-wrap: nowrap;
     align-items: center;
+    gap: 12px;
   }
 
   .post-actions__group {
-    width: 100%;
+    width: auto;
+    display: flex;
+    gap: 8px;
   }
 
   .like-button,
   .repost-button {
-    flex: 1 1 0;
+    flex: 0 0 auto;
+    min-width: auto;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  .score-pill {
+    display: none;
   }
 
   .mobile-dock {
     position: fixed;
-    left: max(12px, env(safe-area-inset-left));
-    right: max(12px, env(safe-area-inset-right));
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    z-index: 30;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    padding: 8px;
-    border: 1px solid rgba(171, 219, 255, 0.16);
-    border-radius: 22px;
-    background: rgba(4, 17, 31, 0.86);
-    backdrop-filter: blur(18px);
-    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.34);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 0;
+    padding: 0;
+    height: 53px;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .mobile-dock__link,
   .mobile-dock__button {
-    min-height: 46px;
+    flex: 1;
+    min-height: 53px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0 10px;
-    border-radius: 16px;
-    font-size: 0.82rem;
-    font-weight: 700;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
     text-align: center;
+    background: transparent;
+    border: none;
   }
 
   .mobile-dock__link {
     color: var(--text-soft);
-    border: 1px solid rgba(171, 219, 255, 0.12);
-    background: rgba(255, 255, 255, 0.04);
+    border: none;
+    background: transparent;
+  }
+
+  .mobile-dock__link:hover,
+  .mobile-dock__link:active {
+    background: rgba(29, 155, 240, 0.1);
   }
 
   .mobile-dock__button {
-    color: #03101d;
+    color: #fff;
     border: 0;
-    background: linear-gradient(135deg, var(--cyan), var(--blue-bright));
-    box-shadow: 0 12px 24px rgba(16, 131, 254, 0.22);
+    background: var(--blue);
+    box-shadow: none;
   }
 }
 
