@@ -422,12 +422,15 @@ async function handleLoginSubmit(event) {
   const password = String(formData.get("password") || "").trim();
   const service = normalizeService(String(formData.get("service") || ""));
 
+  console.log("Tentando login:", { identifier, service });
+
   if (!identifier || !password) {
     updateSessionState("error", "faltando dados");
+    alert("Por favor, preencha o handle e a app password.");
     return;
   }
 
-  updateSessionState("busy", "entrando");
+  updateSessionState("busy", "entrando...");
 
   try {
     const session = await apiFetch(service, "com.atproto.server.createSession", {
@@ -437,6 +440,8 @@ async function handleLoginSubmit(event) {
         password,
       },
     });
+
+    console.log("Login sucesso:", session.handle);
 
     state.session = {
       accessJwt: session.accessJwt,
@@ -457,13 +462,24 @@ async function handleLoginSubmit(event) {
     updateComposerState();
     await Promise.all([refreshPersonalFeed(), refreshGlobalFeed()]);
   } catch (error) {
-    console.error(error);
+    console.error("Erro detalhado no login:", error);
     clearStoredSession();
     state.session = null;
     state.profile = null;
     updateProfileChip();
     updateComposerState();
-    updateSessionState("error", "erro no login");
+    
+    let errorMsg = "erro no login";
+    if (error.message.includes("401")) {
+      errorMsg = "Senha incorreta ou handle inválido. Use uma App Password.";
+    } else if (error.message.includes("network") || error.message.includes("Failed to fetch")) {
+      errorMsg = "Erro de conexão. Verifique sua internet.";
+    } else {
+      errorMsg = error.message || "erro desconhecido";
+    }
+    
+    updateSessionState("error", errorMsg);
+    alert("Erro ao entrar: " + errorMsg);
     renderPersonalFeed([], "Não consegui entrar com essa conta. Confira o handle e a app password.");
   }
 }
