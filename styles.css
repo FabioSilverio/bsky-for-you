@@ -1138,21 +1138,84 @@ code {
     width: auto;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 12px;
+    gap: 4px;
+    padding: 8px 0;
   }
 
   .post-actions__group {
     width: auto;
     display: flex;
-    gap: 8px;
+    gap: 4px;
+    flex: 1;
   }
 
-  .like-button,
-  .repost-button {
+  .action-button {
     flex: 0 0 auto;
-    min-width: auto;
-    padding: 8px 12px;
-    font-size: 0.85rem;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .action-button__icon {
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+  }
+
+  .reply-button {
+    color: var(--text-muted);
+  }
+
+  .reply-button:hover {
+    color: var(--blue);
+    background: rgba(29, 155, 240, 0.1);
+  }
+
+  .repost-button {
+    color: var(--text-muted);
+  }
+
+  .repost-button:hover {
+    color: var(--green);
+    background: rgba(0, 186, 124, 0.1);
+  }
+
+  .repost-button.is-reposted {
+    color: var(--green);
+  }
+
+  .like-button {
+    color: var(--text-muted);
+  }
+
+  .like-button:hover {
+    color: var(--danger);
+    background: rgba(249, 24, 128, 0.1);
+  }
+
+  .like-button.is-liked {
+    color: var(--danger);
+  }
+
+  .quote-button {
+    color: var(--text-muted);
+  }
+
+  .quote-button:hover {
+    color: var(--blue);
+    background: rgba(29, 155, 240, 0.1);
+  }
+
+  .action-button:active {
+    transform: scale(0.95);
   }
 
   .score-pill {
