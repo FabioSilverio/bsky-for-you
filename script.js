@@ -1080,6 +1080,18 @@ function rankPersonalFeed(feedItems, preferences, options) {
       .filter((item) => preferences.includeReposts || !isRepost(item))
   );
 
+  // Modo cronológico: ordenar por idade (mais recentes primeiro)
+  if (preferences.mode === "chronological") {
+    return normalized
+      .map((item, index) => ({
+        ...item,
+        bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
+        score: scorePost(item, preferences),
+        rank: index + 1,
+      }))
+      .sort((left, right) => getAgeMinutes(left) - getAgeMinutes(right));
+  }
+
   const thresholds = getCurrentHotThresholds(options.relaxLevel);
   const recentWindowMinutes = Math.max(options.windowHours * 60, 30);
   const hotNow = normalized
@@ -1338,12 +1350,6 @@ function buildPostCard(entry) {
   if (embedNodes.length > 0) {
     embed.hidden = false;
     embed.replaceChildren(...embedNodes);
-    
-    // Adicionar click para lightbox nas imagens
-    embed.querySelectorAll('img').forEach(img => {
-      img.style.cursor = 'pointer';
-      img.addEventListener('click', () => openLightbox([img.src], 0));
-    });
   }
 
   return node;
@@ -1715,6 +1721,17 @@ function buildEmbedNodes(embed) {
     image.alt = summary.alt || "";
     image.loading = "lazy";
     image.style.cursor = 'pointer';
+    
+    // Coletar todas as imagens para o lightbox
+    let allImages = [summary.url];
+    if (embed.images && embed.images.length > 1) {
+      allImages = embed.images.map(img => img.thumb || img.fullsize);
+    }
+    
+    // Encontrar o índice desta imagem
+    const imgIndex = allImages.indexOf(summary.url);
+    
+    image.addEventListener('click', () => openLightbox(allImages, imgIndex >= 0 ? imgIndex : 0));
 
     wrapper.appendChild(image);
     return [wrapper];
@@ -1731,6 +1748,14 @@ function buildEmbedNodes(embed) {
     video.preload = "metadata";
     video.style.maxWidth = '100%';
     video.style.borderRadius = '12px';
+    
+    // Clicar no wrapper abre vídeo em lightbox
+    wrapper.style.cursor = 'pointer';
+    wrapper.addEventListener('click', (e) => {
+      if (e.target !== video) {
+        openLightbox([summary.url], 0);
+      }
+    });
 
     wrapper.appendChild(video);
     return [wrapper];
@@ -2360,4 +2385,87 @@ function readImageDimensions(file) {
 
     image.src = url;
   });
+}
+
+// Lightbox functions
+let lightboxImages = [];
+let lightboxIndex = 0;
+
+function openLightbox(images, index) {
+  if (!images || images.length === 0) return;
+  
+  lightboxImages = images;
+  lightboxIndex = index;
+  
+  const modal = document.getElementById('lightbox-modal');
+  const img = modal.querySelector('[data-lightbox-image]');
+  const video = modal.querySelector('[data-lightbox-video]');
+  const counter = modal.querySelector('[data-lightbox-counter]');
+  const prevBtn = modal.querySelector('.lightbox-prev');
+  const nextBtn = modal.querySelector('.lightbox-next');
+  
+  updateLightboxContent();
+  
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+  
+  prevBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
+  nextBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
+}
+
+function closeLightbox() {
+  const modal = document.getElementById('lightbox-modal');
+  modal.hidden = true;
+  document.body.style.overflow = '';
+  
+  const img = modal.querySelector('[data-lightbox-image]');
+  const video = modal.querySelector('[data-lightbox-video]');
+  
+  img.src = '';
+  video.src = '';
+  video.hidden = true;
+  img.hidden = false;
+  
+  lightboxImages = [];
+  lightboxIndex = 0;
+}
+
+function navigateLightbox(direction) {
+  if (lightboxImages.length <= 1) return;
+  
+  lightboxIndex += direction;
+  if (lightboxIndex < 0) lightboxIndex = lightboxImages.length - 1;
+  if (lightboxIndex >= lightboxImages.length) lightboxIndex = 0;
+  
+  updateLightboxContent();
+}
+
+function updateLightboxContent() {
+  const modal = document.getElementById('lightbox-modal');
+  const img = modal.querySelector('[data-lightbox-image]');
+  const video = modal.querySelector('[data-lightbox-video]');
+  const counter = modal.querySelector('[data-lightbox-counter]');
+  
+  const currentUrl = lightboxImages[lightboxIndex];
+  const isVideo = currentUrl.match(/\.(mp4|webm|ogg)$/i);
+  
+  if (isVideo) {
+    img.hidden = true;
+    video.hidden = false;
+    video.src = currentUrl;
+    video.play();
+  } else {
+    video.hidden = true;
+    video.pause();
+    video.src = '';
+    img.hidden = false;
+    img.src = currentUrl;
+  }
+  
+  if (lightboxImages.length > 1) {
+    counter.textContent = `${lightboxIndex + 1} / ${lightboxImages.length}`;
+    counter.hidden = false;
+  } else {
+    counter.hidden = true;
+  }
 }
