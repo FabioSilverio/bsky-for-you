@@ -251,19 +251,26 @@ function bindEvents() {
 
 function setupInfiniteScroll() {
   if (!elements.personalSentinel || !("IntersectionObserver" in window)) {
+    // Fallback para scroll manual se IntersectionObserver não funcionar
+    window.addEventListener('scroll', () => {
+      const scrollThreshold = document.documentElement.scrollHeight - window.innerHeight - 300;
+      if (window.scrollY >= scrollThreshold && !state.isLoadingMorePersonal) {
+        loadMorePersonalFeed();
+      }
+    });
     return;
   }
 
   personalObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && !state.isLoadingMorePersonal) {
           loadMorePersonalFeed();
         }
       });
     },
     {
-      rootMargin: "0px 0px 220px 0px",
+      rootMargin: "0px 0px 300px 0px",
       threshold: 0.01,
     }
   );
