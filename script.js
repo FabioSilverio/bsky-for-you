@@ -1259,15 +1259,19 @@ function buildPostCard(entry) {
   const badge = node.querySelector("[data-badge]");
   const time = node.querySelector("[data-time]");
   const text = node.querySelector("[data-text]");
-  const link = node.querySelector("[data-post-link]");
-  const likes = node.querySelector("[data-likes]");
-  const reposts = node.querySelector("[data-reposts]");
-  const replies = node.querySelector("[data-replies]");
-  const quotes = node.querySelector("[data-quotes]");
-  const score = node.querySelector("[data-score]");
-  const likeButton = node.querySelector("[data-like-button]");
-  const repostButton = node.querySelector("[data-repost-button]");
+  const content = node.querySelector("[data-post-content]");
+  const replyBtn = node.querySelector("[data-reply-button]");
+  const repostBtn = node.querySelector("[data-repost-button]");
+  const likeBtn = node.querySelector("[data-like-button]");
+  const quoteBtn = node.querySelector("[data-quote-button]");
+  const replyCount = node.querySelector("[data-reply-count]");
+  const repostCount = node.querySelector("[data-repost-count]");
+  const likeCount = node.querySelector("[data-like-count]");
+  const quoteCount = node.querySelector("[data-quote-count]");
   const embed = node.querySelector("[data-embed]");
+
+  // Store entry data on the card for event handlers
+  node._entryData = entry;
 
   node.dataset.source = entry.source;
 
@@ -1278,13 +1282,22 @@ function buildPostCard(entry) {
   time.textContent = formatRelativeTime(entry.indexedAt);
   time.dateTime = entry.indexedAt;
   text.textContent = entry.text || "Abrir post no Bluesky";
-  link.href = entry.postUrl;
+  
+  // Make content clickable to open in lightbox if there are images
+  if (entry.embed?.images?.length > 0) {
+    content.style.cursor = 'pointer';
+    content.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openLightbox(entry.embed.images, 0);
+    });
+  }
 
-  likes.textContent = `${formatCompact(entry.likeCount)} likes`;
-  reposts.textContent = `${formatCompact(entry.repostCount)} reposts`;
-  replies.textContent = `${formatCompact(entry.replyCount)} replies`;
-  quotes.textContent = `${formatCompact(entry.quoteCount)} quotes`;
-  score.textContent = `${entry.score.toFixed(1)} pts`;
+  // Set action button counts
+  replyCount.textContent = formatCompact(entry.replyCount);
+  repostCount.textContent = formatCompact(entry.repostCount);
+  likeCount.textContent = formatCompact(entry.likeCount);
+  quoteCount.textContent = formatCompact(entry.quoteCount);
 
   const badgeLabel = getBadgeLabel(entry);
   if (badgeLabel) {
@@ -1292,8 +1305,10 @@ function buildPostCard(entry) {
     badge.textContent = badgeLabel;
   }
 
-  configureLikeButton(likeButton, entry);
-  configureRepostButton(repostButton, entry);
+  configureActionButton(likeBtn, entry, 'like');
+  configureActionButton(repostBtn, entry, 'repost');
+  configureActionButton(replyBtn, entry, 'reply');
+  configureActionButton(quoteBtn, entry, 'quote');
 
   const embedNodes = buildEmbedNodes(entry.embed);
   if (embedNodes.length > 0) {
@@ -1304,37 +1319,35 @@ function buildPostCard(entry) {
   return node;
 }
 
-function configureLikeButton(button, entry) {
+// New unified action button configuration
+function configureActionButton(button, entry, actionType) {
   if (!button) {
     return;
   }
 
-  const liked = Boolean(entry.viewerLikeUri);
-  button.textContent = liked ? "Curtido" : "Curtir";
-  button.classList.toggle("is-liked", liked);
-  button.disabled = !state.session;
-
-  button.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    await toggleLike(entry, button);
-  });
-}
-
-function configureRepostButton(button, entry) {
-  if (!button) {
-    return;
+  let isActive = false;
+  if (actionType === 'like') {
+    isActive = Boolean(entry.viewerLikeUri);
+  } else if (actionType === 'repost') {
+    isActive = Boolean(entry.viewerRepostUri);
   }
 
-  const reposted = Boolean(entry.viewerRepostUri);
-  button.textContent = reposted ? "Repostado" : "Repostar";
-  button.classList.toggle("is-reposted", reposted);
-  button.disabled = !state.session;
+  button.classList.toggle('is-active', isActive);
+  button.disabled = !state.session && actionType !== 'reply';
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    await toggleRepost(entry, button);
+    
+    if (actionType === 'like') {
+      await toggleLike(entry, button);
+    } else if (actionType === 'repost') {
+      await toggleRepost(entry, button);
+    } else if (actionType === 'quote') {
+      openQuoteModal(entry);
+    } else if (actionType === 'reply') {
+      window.open(entry.postUrl + '?lang=en', '_blank');
+    }
   });
 }
 
@@ -2186,3 +2199,219 @@ function readImageDimensions(file) {
     image.src = url;
   });
 }
+
+// Lightbox functionality for images and videos
+let lightboxMedia = [];
+let lightboxIndex = 0;
+
+function openLightbox(media, index = 0) {
+  const modal = document.getElementById('lightbox-modal');
+  const img = modal.querySelector('[data-lightbox-image]');
+  const video = modal.querySelector('[data-lightbox-video]');
+  const counter = modal.querySelector('[data-lightbox-counter]');
+  
+  lightboxMedia = media;
+  lightboxIndex = index;
+  
+  showLightboxMedia(index);
+  updateLightboxCounter();
+  
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function showLightboxMedia(index) {
+  const modal = document.getElementById('lightbox-modal');
+  const img = modal.querySelector('[data-lightbox-image]');
+  const video = modal.querySelector('[data-lightbox-video]');
+  const prevBtn = modal.querySelector('[data-lightbox-prev]');
+  const nextBtn = modal.querySelector('[data-lightbox-next]');
+  
+  if (index < 0 || index >= lightboxMedia.length) return;
+  
+  const item = lightboxMedia[index];
+  
+  if (item.video || (item.mimeType && item.mimeType.startsWith('video/'))) {
+    img.hidden = true;
+    video.hidden = false;
+    video.src = item.video?.ref?.link || item.url;
+    video.play();
+  } else {
+    video.hidden = true;
+    video.pause();
+    video.src = '';
+    img.hidden = false;
+    img.src = item.image?.ref?.link || item.url || item.fullsize;
+    img.alt = item.alt || '';
+  }
+  
+  prevBtn.disabled = index === 0;
+  nextBtn.disabled = index >= lightboxMedia.length - 1;
+}
+
+function updateLightboxCounter() {
+  const counter = document.querySelector('[data-lightbox-counter]');
+  if (lightboxMedia.length > 1) {
+    counter.textContent = `${lightboxIndex + 1} / ${lightboxMedia.length}`;
+    counter.hidden = false;
+  } else {
+    counter.hidden = true;
+  }
+}
+
+function closeLightbox() {
+  const modal = document.getElementById('lightbox-modal');
+  const video = modal.querySelector('[data-lightbox-video]');
+  
+  video.pause();
+  video.src = '';
+  modal.hidden = true;
+  document.body.style.overflow = '';
+  lightboxMedia = [];
+  lightboxIndex = 0;
+}
+
+function navigateLightbox(direction) {
+  const newIndex = lightboxIndex + direction;
+  if (newIndex >= 0 && newIndex < lightboxMedia.length) {
+    lightboxIndex = newIndex;
+    showLightboxMedia(newIndex);
+    updateLightboxCounter();
+  }
+}
+
+// Quote modal functionality
+let currentQuoteEntry = null;
+
+function openQuoteModal(entry) {
+  if (!state.session) {
+    updateSessionState("error", "entre para citar");
+    return;
+  }
+  
+  currentQuoteEntry = entry;
+  const modal = document.getElementById('quote-modal');
+  const preview = modal.querySelector('[data-quote-preview]');
+  const textarea = modal.querySelector('[data-quote-text]');
+  
+  // Create a mini preview of the post being quoted
+  preview.innerHTML = `
+    <div class="author-block" style="margin-bottom: 8px;">
+      <img src="${entry.avatar || makeAvatarFallback(entry.authorName)}" alt="" style="width: 32px; height: 32px; border-radius: 50%;" />
+      <div>
+        <strong style="font-size: 0.9rem;">${escapeHtml(entry.authorName)}</strong>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">@${escapeHtml(entry.authorHandle)}</span>
+      </div>
+    </div>
+    <p style="color: var(--text-soft); font-size: 0.9rem; line-height: 1.5;">${escapeHtml(entry.text || '')}</p>
+  `;
+  
+  textarea.value = '';
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+  textarea.focus();
+}
+
+function closeQuoteModal() {
+  const modal = document.getElementById('quote-modal');
+  modal.hidden = true;
+  document.body.style.overflow = '';
+  currentQuoteEntry = null;
+}
+
+async function submitQuote(event) {
+  event.preventDefault();
+  
+  if (!currentQuoteEntry || !state.session) return;
+  
+  const textarea = document.querySelector('[data-quote-text]');
+  const text = textarea.value.trim();
+  
+  if (!text) {
+    return;
+  }
+  
+  try {
+    // Create quote post record
+    const record = {
+      $type: "app.bsky.feed.post",
+      text: text,
+      createdAt: new Date().toISOString(),
+      embed: {
+        $type: "app.bsky.embed.record",
+        record: {
+          uri: currentQuoteEntry.uri,
+          cid: currentQuoteEntry.cid,
+        },
+      },
+    };
+    
+    await apiFetch(state.session.service, "com.atproto.repo.createRecord", {
+      method: "POST",
+      token: state.session.accessJwt,
+      body: {
+        repo: state.session.did,
+        collection: "app.bsky.feed.post",
+        record,
+      },
+    });
+    
+    closeQuoteModal();
+    await refreshPersonalFeed();
+  } catch (error) {
+    console.error(error);
+    updateSessionState("error", "erro ao citar");
+  }
+}
+
+// Initialize lightbox and quote modal event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Lightbox events
+  document.querySelectorAll('[data-lightbox-close]').forEach(el => {
+    el.addEventListener('click', closeLightbox);
+  });
+  
+  document.querySelector('[data-lightbox-prev]')?.addEventListener('click', () => {
+    navigateLightbox(-1);
+  });
+  
+  document.querySelector('[data-lightbox-next]')?.addEventListener('click', () => {
+    navigateLightbox(1);
+  });
+  
+  // Close lightbox on backdrop click
+  const lightboxBackdrop = document.querySelector('.lightbox-backdrop');
+  if (lightboxBackdrop) {
+    lightboxBackdrop.addEventListener('click', closeLightbox);
+  }
+  
+  // Keyboard navigation for lightbox
+  document.addEventListener('keydown', (e) => {
+    const modal = document.getElementById('lightbox-modal');
+    if (!modal.hidden) {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') navigateLightbox(-1);
+      if (e.key === 'ArrowRight') navigateLightbox(1);
+    }
+    
+    const quoteModal = document.getElementById('quote-modal');
+    if (!quoteModal.hidden && e.key === 'Escape') {
+      closeQuoteModal();
+    }
+  });
+  
+  // Quote modal events
+  document.querySelectorAll('[data-quote-close]').forEach(el => {
+    el.addEventListener('click', closeQuoteModal);
+  });
+  
+  document.querySelector('[data-quote-cancel]')?.addEventListener('click', closeQuoteModal);
+  
+  document.querySelector('[data-quote-form]')?.addEventListener('submit', submitQuote);
+  
+  // Close quote modal on backdrop click
+  const quoteBackdrop = document.querySelector('.quote-backdrop');
+  if (quoteBackdrop) {
+    quoteBackdrop.addEventListener('click', closeQuoteModal);
+  }
+});
