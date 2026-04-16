@@ -118,6 +118,7 @@ const state = {
   globalCursor: null,
   globalRefreshSerial: 0,
   globalRefreshDepth: 0,
+  autoRefreshInterval: null,
 };
 
 const elements = {
@@ -158,6 +159,24 @@ async function bootstrap() {
   updateComposerState();
   await restorePersistedSession();
   await refreshGlobalFeed();
+  startAutoRefresh();
+}
+
+function startAutoRefresh() {
+  if (state.autoRefreshInterval) {
+    clearInterval(state.autoRefreshInterval);
+  }
+  
+  state.autoRefreshInterval = setInterval(async () => {
+    try {
+      await refreshGlobalFeed();
+      if (state.session) {
+        await refreshPersonalFeed();
+      }
+    } catch (error) {
+      console.error('Auto-refresh error:', error);
+    }
+  }, 2000);
 }
 
 function bindEvents() {
