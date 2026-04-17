@@ -283,20 +283,21 @@ function hydrateForms() {
     return;
   }
 
-  elements.controlsForm.elements.namedItem("mode").value = state.preferences.mode;
-  elements.controlsForm.elements.namedItem("windowHours").value = String(
-    state.preferences.windowHours
-  );
-  elements.controlsForm.elements.namedItem("postLimit").value = String(
-    state.preferences.postLimit
-  );
-  elements.controlsForm.elements.namedItem("includeReposts").checked =
-    state.preferences.includeReposts;
+  const modeField = elements.controlsForm.elements.namedItem("mode");
+  const windowHoursField = elements.controlsForm.elements.namedItem("windowHours");
+  const postLimitField = elements.controlsForm.elements.namedItem("postLimit");
+  const includeRepostsField = elements.controlsForm.elements.namedItem("includeReposts");
 
-  elements.loginForm.elements.namedItem("identifier").value =
-    state.preferences.identifier || "";
-  elements.loginForm.elements.namedItem("service").value =
-    state.preferences.service || "https://bsky.social";
+  if (modeField) modeField.value = state.preferences.mode;
+  if (windowHoursField) windowHoursField.value = String(state.preferences.windowHours);
+  if (postLimitField) postLimitField.value = String(state.preferences.postLimit);
+  if (includeRepostsField) includeRepostsField.checked = state.preferences.includeReposts;
+
+  const identifierField = elements.loginForm.elements.namedItem("identifier");
+  const serviceField = elements.loginForm.elements.namedItem("service");
+  
+  if (identifierField) identifierField.value = state.preferences.identifier || "";
+  if (serviceField) serviceField.value = state.preferences.service || "https://bsky.social";
 }
 
 async function withButtonBusy(button, label, task) {
