@@ -1082,7 +1082,12 @@ function rankPersonalFeed(feedItems, preferences, options) {
         score: scorePost(item, preferences),
         rank: index + 1,
       }))
-      .sort((left, right) => getAgeMinutes(left) - getAgeMinutes(right));
+      .sort((left, right) => {
+        // Ordenação estritamente cronológica: mais recentes primeiro
+        const leftTime = new Date(left.indexedAt || left.record?.createdAt || Date.now()).getTime();
+        const rightTime = new Date(right.indexedAt || right.record?.createdAt || Date.now()).getTime();
+        return rightTime - leftTime;
+      });
   }
 
   const thresholds = getCurrentHotThresholds(options.relaxLevel);
@@ -2372,23 +2377,33 @@ let lightboxIndex = 0;
 function openLightbox(images, index) {
   if (!images || images.length === 0) return;
   
+  const modal = document.getElementById('lightbox-modal');
+  if (!modal) {
+    console.error('Lightbox modal not found');
+    return;
+  }
+  
   lightboxImages = images;
   lightboxIndex = index;
   
-  const modal = document.getElementById('lightbox-modal');
   const img = modal.querySelector('[data-lightbox-image]');
   const video = modal.querySelector('[data-lightbox-video]');
   const counter = modal.querySelector('[data-lightbox-counter]');
   const prevBtn = modal.querySelector('.lightbox-prev');
   const nextBtn = modal.querySelector('.lightbox-next');
   
+  if (!img || !video || !counter) {
+    console.error('Lightbox elements not found');
+    return;
+  }
+  
   updateLightboxContent();
   
   modal.hidden = false;
   document.body.style.overflow = 'hidden';
   
-  prevBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
-  nextBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
+  if (prevBtn) prevBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
+  if (nextBtn) nextBtn.style.display = lightboxImages.length > 1 ? 'flex' : 'none';
 }
 
 function closeLightbox() {
