@@ -284,8 +284,13 @@ function hydrateForms() {
   const identifierField = elements.loginForm.elements.namedItem("identifier");
   const serviceField = elements.loginForm.elements.namedItem("service");
   
-  if (identifierField) identifierField.value = state.preferences.identifier || "";
-  if (serviceField) serviceField.value = state.preferences.service || "https://bsky.social";
+  // Verificação null-safe para evitar erros
+  if (identifierField && typeof identifierField.value !== 'undefined') {
+    identifierField.value = state.preferences.identifier || "";
+  }
+  if (serviceField && typeof serviceField.value !== 'undefined') {
+    serviceField.value = state.preferences.service || "https://bsky.social";
+  }
 }
 
 async function withButtonBusy(button, label, task) {
