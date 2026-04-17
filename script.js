@@ -1099,7 +1099,12 @@ function rankPersonalFeed(feedItems, preferences, options) {
       bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
-    .sort(compareHotNow);
+    .sort((left, right) => {
+      // Dentro do hotNow, ordenar por tempo: mais recentes primeiro
+      const leftTime = new Date(left.indexedAt || left.record?.createdAt || Date.now()).getTime();
+      const rightTime = new Date(right.indexedAt || right.record?.createdAt || Date.now()).getTime();
+      return rightTime - leftTime;
+    });
 
   const hotUris = new Set(hotNow.map((item) => item.uri));
 
@@ -1112,7 +1117,12 @@ function rankPersonalFeed(feedItems, preferences, options) {
       bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
-    .sort(compareRecentMomentum);
+    .sort((left, right) => {
+      // Dentro do recentMomentum, ordenar por tempo: mais recentes primeiro
+      const leftTime = new Date(left.indexedAt || left.record?.createdAt || Date.now()).getTime();
+      const rightTime = new Date(right.indexedAt || right.record?.createdAt || Date.now()).getTime();
+      return rightTime - leftTime;
+    });
 
   const recentUris = new Set(recentMomentum.map((item) => item.uri));
 
@@ -1123,7 +1133,12 @@ function rankPersonalFeed(feedItems, preferences, options) {
       bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
       score: scorePost(item, preferences),
     }))
-    .sort((left, right) => right.score - left.score);
+    .sort((left, right) => {
+      // Dentro do fallback, ordenar por tempo: mais recentes primeiro
+      const leftTime = new Date(left.indexedAt || left.record?.createdAt || Date.now()).getTime();
+      const rightTime = new Date(right.indexedAt || right.record?.createdAt || Date.now()).getTime();
+      return rightTime - leftTime;
+    });
 
   return [...hotNow, ...recentMomentum, ...fallback].map((item, index) => ({
     ...item,
