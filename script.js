@@ -1071,9 +1071,11 @@ function rankPersonalFeed(feedItems, preferences, options) {
       .filter((item) => preferences.includeReposts || !isRepost(item))
   );
 
-  // Modo cronológico: ordenar por idade (mais recentes primeiro)
+  // Modo cronológico: ordenar por idade (mais recentes primeiro) com filtro de engajamento mínimo
   if (preferences.mode === "chronological") {
+    const minLikes = BASE_MIN_ENGAGEMENT; // Mínimo de 20 likes
     return normalized
+      .filter((item) => item.likeCount >= minLikes) // Filtra posts com menos de 20 likes
       .map((item, index) => ({
         ...item,
         bucketIndex: getWindowBucketIndex(getAgeMinutes(item)),
@@ -1700,11 +1702,8 @@ function buildEmbedNodes(embed) {
     image.loading = "lazy";
     image.style.cursor = 'pointer';
     
-    // Coletar todas as imagens para o lightbox
-    let allImages = [summary.url];
-    if (embed.images && embed.images.length > 1) {
-      allImages = embed.images.map(img => img.thumb || img.fullsize);
-    }
+    // Usar todas as imagens em full resolution do summary.allImages
+    const allImages = summary.allImages || [summary.url];
     
     // Encontrar o índice desta imagem
     const imgIndex = allImages.indexOf(summary.url);
@@ -1769,6 +1768,7 @@ function summarizeEmbed(embed) {
       type: "image",
       url: embed.images[0].thumb || embed.images[0].fullsize,
       alt: embed.images[0].alt || "",
+      allImages: embed.images.map(img => img.fullsize || img.thumb), // Todas as imagens em full resolution
     };
   }
 
