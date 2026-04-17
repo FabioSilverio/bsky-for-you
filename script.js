@@ -123,7 +123,6 @@ const state = {
 
 const elements = {
   loginForm: document.querySelector("[data-login-form]"),
-  controlsForm: document.querySelector("[data-controls-form]"),
   composeForm: document.querySelector("[data-compose-form]"),
   composeText: document.querySelector("[data-compose-text]"),
   composeImageInput: document.querySelector("[data-compose-images]"),
@@ -169,7 +168,6 @@ function startAutoRefresh() {
 
 function bindEvents() {
   elements.loginForm?.addEventListener("submit", handleLoginSubmit);
-  elements.controlsForm?.addEventListener("change", handleControlsChange);
   elements.composeForm?.addEventListener("submit", handleComposeSubmit);
   elements.composeImageInput?.addEventListener("change", handleComposeImagesSelected);
   elements.composePreviews?.addEventListener("input", handleComposePreviewInput);
@@ -279,19 +277,9 @@ function setupInfiniteScroll() {
 }
 
 function hydrateForms() {
-  if (!elements.controlsForm || !elements.loginForm) {
+  if (!elements.loginForm) {
     return;
   }
-
-  const modeField = elements.controlsForm.elements.namedItem("mode");
-  const windowHoursField = elements.controlsForm.elements.namedItem("windowHours");
-  const postLimitField = elements.controlsForm.elements.namedItem("postLimit");
-  const includeRepostsField = elements.controlsForm.elements.namedItem("includeReposts");
-
-  if (modeField) modeField.value = state.preferences.mode;
-  if (windowHoursField) windowHoursField.value = String(state.preferences.windowHours);
-  if (postLimitField) postLimitField.value = String(state.preferences.postLimit);
-  if (includeRepostsField) includeRepostsField.checked = state.preferences.includeReposts;
 
   const identifierField = elements.loginForm.elements.namedItem("identifier");
   const serviceField = elements.loginForm.elements.namedItem("service");
@@ -482,32 +470,6 @@ async function handleLoginSubmit(event) {
     updateSessionState("error", errorMsg);
     alert("Erro ao entrar: " + errorMsg);
     renderPersonalFeed([], "Não consegui entrar com essa conta. Confira o handle e a app password.");
-  }
-}
-
-function handleControlsChange() {
-  const form = elements.controlsForm;
-  if (!form) {
-    return;
-  }
-
-  state.preferences = {
-    ...state.preferences,
-    mode: form.elements.namedItem("mode").value,
-    windowHours: Number(form.elements.namedItem("windowHours").value),
-    postLimit: Number(form.elements.namedItem("postLimit").value),
-    includeReposts: form.elements.namedItem("includeReposts").checked,
-  };
-
-  savePreferences();
-  resetPersonalWindowing();
-
-  if (state.rawTimeline.length > 0) {
-    rerankPersonalFeed();
-  }
-
-  if (state.globalFeed.length > 0) {
-    renderGlobalFeed(state.globalFeed.slice(0, state.preferences.postLimit));
   }
 }
 
